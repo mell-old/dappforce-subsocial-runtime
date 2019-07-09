@@ -167,6 +167,10 @@ decl_storage! {
     BlogFollowers get(blog_followers): map T::BlogId => Vec<T::AccountId>;
     BlogFollowedByAccount get(blog_followed_by_account): map (T::AccountId, T::BlogId) => bool;
 
+    AccountFollowedByAccount get(account_followed_by_account): map (T::AccountId, T::AccountId) => bool;
+    AccountsFollowedByAccount get(accounts_followed_by_account): map T::AccountId => Vec<T::AccountId>;
+    AccountFollowers get(account_followers): map T::AccountId => Vec<T::AccountId>;
+
     NextBlogId get(next_blog_id): T::BlogId = T::BlogId::sa(1);
     NextPostId get(next_post_id): T::PostId = T::PostId::sa(1);
     NextCommentId get(next_comment_id): T::CommentId = T::CommentId::sa(1);
@@ -188,6 +192,9 @@ decl_event! {
 
     BlogFollowed(AccountId, BlogId),
     BlogUnfollowed(AccountId, BlogId),
+
+    AccountFollowed(AccountId, AccountId),
+    AccountUnfollowed(AccountId, AccountId),
 
     PostCreated(AccountId, PostId),
     PostUpdated(AccountId, PostId),
@@ -285,6 +292,37 @@ decl_module! {
       <BlogById<T>>::insert(blog_id, blog);
 
       Self::deposit_event(RawEvent::BlogUnfollowed(owner.clone(), blog_id));
+    }
+
+    fn follow_account(origin, account: T::AccountId) {
+      let owner = ensure_signed(origin)?;
+
+      ensure!(owner != account, "Account can not follow itself");
+      ensure!(!<AccountFollowedByAccount<T>>::exists((owner.clone(), account.clone())), "Account is already followed");
+
+      <AccountsFollowedByAccount<T>>::mutate(owner.clone(), |ids| ids.push(account.clone()));
+      <AccountFollowers<T>>::mutate(account.clone(), |ids| ids.push(owner.clone()));
+      <AccountFollowedByAccount<T>>::insert((owner.clone(), account.clone()), true);
+      Self::deposit_event(RawEvent::AccountFollowed(owner, account));
+    }
+
+    fn unfollow_account(origin, account: T::AccountId) {
+      let owner = ensure_signed(origin)?;
+
+      ensure!(owner != account, "Account can not unfollow itself");
+
+      <AccountsFollowedByAccount<T>>::mutate(owner.clone(), |account_ids| {
+        if let Some(index) = account_ids.iter().position(|x| *x == account) {
+          account_ids.swap_remove(index);
+        }
+      });
+      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| {
+        if let Some(index) = account_ids.iter().position(|x| *x == owner.clone()) {
+          account_ids.swap_remove(index);
+        }
+      });
+      <AccountFollowedByAccount<T>>::remove((owner.clone(), account.clone()));
+      Self::deposit_event(RawEvent::AccountUnfollowed(owner, account));
     }
 
     // TODO use PostUpdate to pass data?
