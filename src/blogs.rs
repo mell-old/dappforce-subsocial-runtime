@@ -47,6 +47,7 @@ pub struct Blog<T: Trait> {
   json: Vec<u8>,
 
   posts_count: u16,
+  followers_count: u32,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -237,7 +238,8 @@ decl_module! {
         writers: vec![],
         slug: slug.clone(),
         json,
-        posts_count: 0
+        posts_count: 0,
+        followers_count: 0
       };
 
       <BlogById<T>>::insert(blog_id, new_blog);
@@ -253,8 +255,11 @@ decl_module! {
     fn follow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
-      Self::ensure_blog_exists(blog_id)?;
+      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(<BlogFollowedByAccount<T>>::exists((owner.clone(), blog_id)), "Account is already following this blog");
+
+      blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
+      <BlogById<T>>::insert(blog_id, blog);
 
       Self::add_blog_follower(owner.clone(), blog_id);
     }
@@ -262,7 +267,7 @@ decl_module! {
     fn unfollow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
-      Self::ensure_blog_exists(blog_id)?;
+      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
 
       <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| {
         if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
@@ -275,6 +280,10 @@ decl_module! {
         }
       });
       <BlogFollowedByAccount<T>>::remove((owner.clone(), blog_id));
+
+      blog.followers_count = blog.followers_count.checked_sub(1).ok_or("Underflow unfollowing a blog")?;
+      <BlogById<T>>::insert(blog_id, blog);
+
       Self::deposit_event(RawEvent::BlogUnfollowed(owner.clone(), blog_id));
     }
 
