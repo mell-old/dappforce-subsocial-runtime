@@ -262,7 +262,7 @@ decl_module! {
     fn unfollow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
-      ensure!(Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is notfollowing this blog");
+      ensure!(Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is not following this blog");
       Self::ensure_blog_exists(blog_id)?;
 
       <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| {
