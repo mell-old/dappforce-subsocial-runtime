@@ -269,7 +269,7 @@ decl_module! {
       let owner = ensure_signed(origin)?;
 
       let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
-      ensure!(<BlogFollowedByAccount<T>>::exists((owner.clone(), blog_id)), "Account is already following this blog");
+      ensure!(!Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is already following this blog");
 
       Self::add_blog_follower(owner.clone(), blog_id, blog)?;
     }
@@ -278,6 +278,7 @@ decl_module! {
       let owner = ensure_signed(origin)?;
 
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
+      ensure!(Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is not following this blog");
 
       <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| {
         if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
