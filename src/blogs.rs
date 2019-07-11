@@ -261,6 +261,7 @@ decl_module! {
       <BlogIdBySlug<T>>::insert(slug, blog_id);
       <NextBlogId<T>>::mutate(|n| { *n += T::BlogId::sa(1); });
 
+      // Blog creator automatically follows their blog:
       Self::add_blog_follower(owner.clone(), blog_id, new_blog)?;
       Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
     }
@@ -348,9 +349,9 @@ decl_module! {
       let mut followed_account = Self::social_account_by_id(account.clone()).ok_or("Followed social account was not found by id")?;
 
       follower_account.following_accounts_count = follower_account.following_accounts_count
-        .checked_sub(1).ok_or("Overflow following an account")?;
+        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
       followed_account.followers_count = followed_account.followers_count
-        .checked_sub(1).ok_or("Overflow following an account")?;
+        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
 
       <SocialAccountById<T>>::insert(follower.clone(), follower_account);
       <SocialAccountById<T>>::insert(account.clone(), followed_account);
