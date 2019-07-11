@@ -234,7 +234,6 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, "Blog slug is too short");
       ensure!(slug.len() <= Self::slug_max_len() as usize, "Blog slug is too long");
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), "Blog slug is not unique");
-
       ensure!(json.len() <= Self::blog_max_len() as usize, "Blog JSON is too long");
 
       let blog_id = Self::next_blog_id();
@@ -249,26 +248,21 @@ decl_module! {
         followers_count: 0
       };
 
-      <BlogById<T>>::insert(blog_id, new_blog);
       <BlogIdsByOwner<T>>::mutate(owner.clone(), |ids| ids.push(blog_id));
       <BlogIdBySlug<T>>::insert(slug, blog_id);
       <NextBlogId<T>>::mutate(|n| { *n += T::BlogId::sa(1); });
-      Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
 
-      // Blog creator automatically follows their blog:
-      Self::add_blog_follower(owner.clone(), blog_id);
+      Self::add_blog_follower(owner.clone(), blog_id, new_blog)?;
+      Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
     }
 
     fn follow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
-      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
+      let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(<BlogFollowedByAccount<T>>::exists((owner.clone(), blog_id)), "Account is already following this blog");
 
-      blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
-      <BlogById<T>>::insert(blog_id, blog);
-
-      Self::add_blog_follower(owner.clone(), blog_id);
+      Self::add_blog_follower(owner.clone(), blog_id, blog)?;
     }
 
     fn unfollow_blog(origin, blog_id: T::BlogId) {
@@ -745,10 +739,19 @@ impl<T: Trait> Module<T> {
     reaction_id
   }
 
-  fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId) {
+  fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
+
+    blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
+
+    <BlogById<T>>::insert(blog_id, blog);
+
     <BlogsFollowedByAccount<T>>::mutate(account.clone(), |ids| ids.push(blog_id));
+
     <BlogFollowers<T>>::mutate(blog_id, |ids| ids.push(account.clone()));
+    
     <BlogFollowedByAccount<T>>::insert((account.clone(), blog_id), true);
+
     Self::deposit_event(RawEvent::BlogFollowed(account, blog_id));
+    Ok(())
   }
 }
