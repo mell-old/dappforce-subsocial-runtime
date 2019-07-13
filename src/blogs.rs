@@ -311,8 +311,8 @@ decl_module! {
       ensure!(follower != account, "Account can not follow itself");
       ensure!(!<AccountFollowedByAccount<T>>::exists((follower.clone(), account.clone())), "Account is already followed");
 
-      let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or("Follower social account was not found by id")?;
-      let mut followed_account = Self::social_account_by_id(account.clone()).ok_or("Followed social account was not found by id")?;
+      let mut follower_account = Self::get_social_account(follower.clone());
+      let mut followed_account = Self::get_social_account(account.clone());
 
       follower_account.following_accounts_count = follower_account.following_accounts_count
         .checked_add(1).ok_or("Overflow following an account")?;
@@ -781,7 +781,7 @@ impl<T: Trait> Module<T> {
 
   fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
 
-    let mut social_account = Self::social_account_by_id(account.clone()).ok_or("Social account was not found by id")?;
+    let mut social_account = Self::get_social_account(account.clone());
     social_account.following_blogs_count = social_account.following_blogs_count
       .checked_add(1)
       .ok_or("Overflow following a blog")?;
@@ -796,5 +796,18 @@ impl<T: Trait> Module<T> {
 
     Self::deposit_event(RawEvent::BlogFollowed(account, blog_id));
     Ok(())
+  }
+
+  fn get_social_account(account: T::AccountId) -> SocialAccount {
+    let mut new_social_account: SocialAccount = SocialAccount {
+      followers_count: 0,
+      following_accounts_count: 0,
+      following_blogs_count: 0
+    };
+    if let Some(social_account) = Self::social_account_by_id(account) {
+      new_social_account = social_account;
+    }
+
+    new_social_account
   }
 }
