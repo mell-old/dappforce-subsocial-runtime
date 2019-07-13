@@ -280,17 +280,9 @@ decl_module! {
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is not following this blog");
 
-      <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| {
-        if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
-          blog_ids.swap_remove(index);
-        }
-      });
-      <BlogFollowers<T>>::mutate(blog_id, |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
-          account_ids.swap_remove(index);
-        }
-      });
-      <BlogFollowedByAccount<T>>::remove((follower.clone(), blog_id));
+      <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| Self::vec_remove_on(blog_ids, blog_id));
+      <BlogFollowers<T>>::mutate(blog_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
+      <BlogFollowedByAccount<T>>::remove((owner.clone(), blog_id));
 
       let mut social_account = Self::social_account_by_id(follower.clone()).ok_or("Social account was not found by id")?;
       social_account.following_blogs_count = social_account.following_blogs_count
@@ -332,16 +324,8 @@ decl_module! {
 
       ensure!(follower != account, "Account can not unfollow itself");
 
-      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == account) {
-          account_ids.swap_remove(index);
-        }
-      });
-      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
-          account_ids.swap_remove(index);
-        }
-      });
+      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |account_ids| Self::vec_remove_on(account_ids, account.clone()));
+      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| Self::vec_remove_on(account_ids, follower.clone()));
       <AccountFollowedByAccount<T>>::remove((follower.clone(), account.clone()));
 
       let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or("Follower social account was not found by id")?;
@@ -569,11 +553,7 @@ decl_module! {
           Self::ensure_blog_exists(blog_id)?;
           
           // Remove post_id from its old blog:
-          <PostIdsByBlogId<T>>::mutate(post.blog_id, |post_ids| {
-            if let Some(index) = post_ids.iter().position(|x| *x == post_id) {
-              post_ids.swap_remove(index);
-            }
-          });
+          <PostIdsByBlogId<T>>::mutate(post.blog_id, |post_ids| Self::vec_remove_on(post_ids, post_id));
           
           // Add post_id to its new blog:
           <PostIdsByBlogId<T>>::mutate(blog_id.clone(), |ids| ids.push(post_id));
@@ -693,11 +673,7 @@ decl_module! {
       let reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
       ensure!(owner == reaction.created.account, "Only reaction owner can delete their reaction");
 
-      <ReactionIdsByPostId<T>>::mutate(post_id, |ids| {
-        if let Some(index) = ids.iter().position(|x| *x == reaction_id) {
-          ids.swap_remove(index);
-        }
-      });
+      <ReactionIdsByPostId<T>>::mutate(post_id, |ids| Self::vec_remove_on(ids, reaction_id));
 
       let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
       match reaction.kind {
@@ -724,11 +700,7 @@ decl_module! {
       let reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
       ensure!(owner == reaction.created.account, "Only reaction owner can delete their reaction");
 
-      <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| {
-        if let Some(index) = ids.iter().position(|x| *x == reaction_id) {
-          ids.swap_remove(index);
-        }
-      });
+      <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| Self::vec_remove_on(ids, reaction_id));
       
       let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
       match reaction.kind {
@@ -815,6 +787,12 @@ impl<T: Trait> Module<T> {
         following_accounts_count: 0,
         following_blogs_count: 0
       }
+    }
+  }
+
+  fn vec_remove_on<F: PartialEq>(vector: &mut Vec<F>, element: F) {
+    if let Some(index) = vector.iter().position(|x| *x == element) {
+      vector.swap_remove(index);
     }
   }
 }
