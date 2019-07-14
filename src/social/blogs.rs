@@ -237,7 +237,7 @@ decl_module! {
     }
 
     // TODO use BlogUpdate to pass data
-    fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       ensure!(slug.len() >= Self::slug_min_len() as usize, "Blog slug is too short");
