@@ -262,8 +262,7 @@ decl_module! {
       <NextBlogId<T>>::mutate(|n| { *n += T::BlogId::sa(1); });
 
       // Blog creator automatically follows their blog:
-      Self::add_blog_follower(owner.clone(), blog_id, new_blog)?;
-      Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
+      Self::add_blog_follower_and_insert_blog(owner.clone(), blog_id, new_blog, true)?;
     }
 
     fn follow_blog(origin, blog_id: T::BlogId) {
@@ -272,7 +271,7 @@ decl_module! {
       let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(!Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is already following this blog");
 
-      Self::add_blog_follower(follower.clone(), blog_id, blog)?;
+      Self::add_blog_follower_and_insert_blog(follower.clone(), blog_id, blog, false)?;
     }
 
     fn unfollow_blog(origin, blog_id: T::BlogId) {
@@ -779,17 +778,26 @@ impl<T: Trait> Module<T> {
     reaction_id
   }
 
-  fn add_blog_follower(follower: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
+  fn add_blog_follower_and_insert_blog(
+    follower: T::AccountId,
+    blog_id: T::BlogId,
+    mut blog: Blog<T>,
+    is_new_blog: bool
+  ) -> dispatch::Result {
 
     let mut social_account = Self::get_or_new_social_account(follower.clone());
     social_account.following_blogs_count = social_account.following_blogs_count
       .checked_add(1)
       .ok_or("Overflow following a blog")?;
 
-    blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
-
     <SocialAccountById<T>>::insert(follower.clone(), social_account);
+
+    blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
     <BlogById<T>>::insert(blog_id, blog);
+    if is_new_blog {
+      Self::deposit_event(RawEvent::BlogCreated(follower.clone(), blog_id));
+    }
+
     <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |ids| ids.push(blog_id));
     <BlogFollowers<T>>::mutate(blog_id, |ids| ids.push(follower.clone()));
     <BlogFollowedByAccount<T>>::insert((follower.clone(), blog_id), true);
