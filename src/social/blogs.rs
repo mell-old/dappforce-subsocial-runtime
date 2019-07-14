@@ -280,9 +280,9 @@ decl_module! {
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is not following this blog");
 
-      <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| Self::vec_remove_on(blog_ids, blog_id));
-      <BlogFollowers<T>>::mutate(blog_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
-      <BlogFollowedByAccount<T>>::remove((owner.clone(), blog_id));
+      <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| Self::vec_remove_on(blog_ids, blog_id));
+      <BlogFollowers<T>>::mutate(blog_id, |account_ids| Self::vec_remove_on(account_ids, follower.clone()));
+      <BlogFollowedByAccount<T>>::remove((follower.clone(), blog_id));
 
       let mut social_account = Self::social_account_by_id(follower.clone()).ok_or("Social account was not found by id")?;
       social_account.following_blogs_count = social_account.following_blogs_count
