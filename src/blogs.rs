@@ -47,6 +47,7 @@ pub struct Blog<T: Trait> {
   json: Vec<u8>,
 
   posts_count: u16,
+  followers_count: u32,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -128,6 +129,14 @@ pub struct Reaction<T: Trait> {
   kind: ReactionKind,
 }
 
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct SocialAccount {
+  followers_count: u32,
+  following_accounts_count: u16,
+  following_blogs_count: u16,
+}
+
 const DEFAULT_SLUG_MIN_LEN: u32 = 5;
 const DEFAULT_SLUG_MAX_LEN: u32 = 50;
 
@@ -149,6 +158,7 @@ decl_storage! {
     PostById get(post_by_id): map T::PostId => Option<Post<T>>;
     CommentById get(comment_by_id): map T::CommentId => Option<Comment<T>>;
     ReactionById get(reaction_by_id): map T::ReactionId => Option<Reaction<T>>;
+    SocialAccountById get(social_account_by_id): map T::AccountId => Option<SocialAccount>;
 
     BlogIdsByOwner get(blog_ids_by_owner): map T::AccountId => Vec<T::BlogId>;
     PostIdsByBlogId get(post_ids_by_blog_id): map T::BlogId => Vec<T::PostId>;
@@ -165,6 +175,10 @@ decl_storage! {
     BlogsFollowedByAccount get(blogs_followed_by_account): map T::AccountId => Vec<T::BlogId>;
     BlogFollowers get(blog_followers): map T::BlogId => Vec<T::AccountId>;
     BlogFollowedByAccount get(blog_followed_by_account): map (T::AccountId, T::BlogId) => bool;
+
+    AccountFollowedByAccount get(account_followed_by_account): map (T::AccountId, T::AccountId) => bool;
+    AccountsFollowedByAccount get(accounts_followed_by_account): map T::AccountId => Vec<T::AccountId>;
+    AccountFollowers get(account_followers): map T::AccountId => Vec<T::AccountId>;
 
     NextBlogId get(next_blog_id): T::BlogId = T::BlogId::sa(1);
     NextPostId get(next_post_id): T::PostId = T::PostId::sa(1);
@@ -187,6 +201,9 @@ decl_event! {
 
     BlogFollowed(AccountId, BlogId),
     BlogUnfollowed(AccountId, BlogId),
+
+    AccountFollowed(AccountId, AccountId),
+    AccountUnfollowed(AccountId, AccountId),
 
     PostCreated(AccountId, PostId),
     PostUpdated(AccountId, PostId),
@@ -226,7 +243,6 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, "Blog slug is too short");
       ensure!(slug.len() <= Self::slug_max_len() as usize, "Blog slug is too long");
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), "Blog slug is not unique");
-
       ensure!(json.len() <= Self::blog_max_len() as usize, "Blog JSON is too long");
 
       let blog_id = Self::next_blog_id();
@@ -237,33 +253,33 @@ decl_module! {
         writers: vec![],
         slug: slug.clone(),
         json,
-        posts_count: 0
+        posts_count: 0,
+        followers_count: 0
       };
 
-      <BlogById<T>>::insert(blog_id, new_blog);
       <BlogIdsByOwner<T>>::mutate(owner.clone(), |ids| ids.push(blog_id));
       <BlogIdBySlug<T>>::insert(slug, blog_id);
       <NextBlogId<T>>::mutate(|n| { *n += T::BlogId::sa(1); });
-      Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
 
       // Blog creator automatically follows their blog:
-      Self::add_blog_follower(owner.clone(), blog_id);
+      Self::add_blog_follower(owner.clone(), blog_id, new_blog)?;
+      Self::deposit_event(RawEvent::BlogCreated(owner.clone(), blog_id));
     }
 
     fn follow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
-      Self::ensure_blog_exists(blog_id)?;
+      let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(!Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is already following this blog");
 
-      Self::add_blog_follower(owner.clone(), blog_id);
+      Self::add_blog_follower(owner.clone(), blog_id, blog)?;
     }
 
     fn unfollow_blog(origin, blog_id: T::BlogId) {
       let owner = ensure_signed(origin)?;
 
+      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
       ensure!(Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is not following this blog");
-      Self::ensure_blog_exists(blog_id)?;
 
       <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| {
         if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
@@ -276,7 +292,71 @@ decl_module! {
         }
       });
       <BlogFollowedByAccount<T>>::remove((owner.clone(), blog_id));
+
+      let mut social_account = Self::social_account_by_id(owner.clone()).ok_or("Social account was not found by id")?;
+      social_account.following_blogs_count = social_account.following_blogs_count
+        .checked_sub(1)
+        .ok_or("Underflow unfollowing a blog")?;
+      blog.followers_count = blog.followers_count.checked_sub(1).ok_or("Underflow unfollowing a blog")?;
+
+      <SocialAccountById<T>>::insert(owner.clone(), social_account);
+      <BlogById<T>>::insert(blog_id, blog);
+
       Self::deposit_event(RawEvent::BlogUnfollowed(owner.clone(), blog_id));
+    }
+
+    fn follow_account(origin, account: T::AccountId) {
+      let follower = ensure_signed(origin)?;
+
+      ensure!(follower != account, "Account can not follow itself");
+      ensure!(!<AccountFollowedByAccount<T>>::exists((follower.clone(), account.clone())), "Account is already followed");
+
+      let mut follower_account = Self::get_social_account(follower.clone());
+      let mut followed_account = Self::get_social_account(account.clone());
+
+      follower_account.following_accounts_count = follower_account.following_accounts_count
+        .checked_add(1).ok_or("Overflow following an account")?;
+      followed_account.followers_count = followed_account.followers_count
+        .checked_add(1).ok_or("Overflow following an account")?;
+
+      <SocialAccountById<T>>::insert(follower.clone(), follower_account);
+      <SocialAccountById<T>>::insert(account.clone(), followed_account);
+
+      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |ids| ids.push(account.clone()));
+      <AccountFollowers<T>>::mutate(account.clone(), |ids| ids.push(follower.clone()));
+      <AccountFollowedByAccount<T>>::insert((follower.clone(), account.clone()), true);
+      Self::deposit_event(RawEvent::AccountFollowed(follower, account));
+    }
+
+    fn unfollow_account(origin, account: T::AccountId) {
+      let follower = ensure_signed(origin)?;
+
+      ensure!(follower != account, "Account can not unfollow itself");
+
+      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |account_ids| {
+        if let Some(index) = account_ids.iter().position(|x| *x == account) {
+          account_ids.swap_remove(index);
+        }
+      });
+      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| {
+        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
+          account_ids.swap_remove(index);
+        }
+      });
+      <AccountFollowedByAccount<T>>::remove((follower.clone(), account.clone()));
+
+      let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or("Follower social account was not found by id")?;
+      let mut followed_account = Self::social_account_by_id(account.clone()).ok_or("Followed social account was not found by id")?;
+
+      follower_account.following_accounts_count = follower_account.following_accounts_count
+        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
+      followed_account.followers_count = followed_account.followers_count
+        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
+
+      <SocialAccountById<T>>::insert(follower.clone(), follower_account);
+      <SocialAccountById<T>>::insert(account.clone(), followed_account);
+
+      Self::deposit_event(RawEvent::AccountUnfollowed(follower, account));
     }
 
     // TODO use PostUpdate to pass data?
@@ -699,10 +779,35 @@ impl<T: Trait> Module<T> {
     reaction_id
   }
 
-  fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId) {
+  fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
+
+    let mut social_account = Self::get_social_account(account.clone());
+    social_account.following_blogs_count = social_account.following_blogs_count
+      .checked_add(1)
+      .ok_or("Overflow following a blog")?;
+
+    blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
+
+    <SocialAccountById<T>>::insert(account.clone(), social_account);
+    <BlogById<T>>::insert(blog_id, blog);
     <BlogsFollowedByAccount<T>>::mutate(account.clone(), |ids| ids.push(blog_id));
     <BlogFollowers<T>>::mutate(blog_id, |ids| ids.push(account.clone()));
     <BlogFollowedByAccount<T>>::insert((account.clone(), blog_id), true);
+
     Self::deposit_event(RawEvent::BlogFollowed(account, blog_id));
+    Ok(())
+  }
+
+  fn get_social_account(account: T::AccountId) -> SocialAccount {
+    let mut new_social_account: SocialAccount = SocialAccount {
+      followers_count: 0,
+      following_accounts_count: 0,
+      following_blogs_count: 0
+    };
+    if let Some(social_account) = Self::social_account_by_id(account) {
+      new_social_account = social_account;
+    }
+
+    new_social_account
   }
 }
