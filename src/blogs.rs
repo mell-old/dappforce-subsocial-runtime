@@ -267,42 +267,42 @@ decl_module! {
     }
 
     fn follow_blog(origin, blog_id: T::BlogId) {
-      let owner = ensure_signed(origin)?;
+      let follower = ensure_signed(origin)?;
 
       let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
-      ensure!(!Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is already following this blog");
+      ensure!(!Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is already following this blog");
 
-      Self::add_blog_follower(owner.clone(), blog_id, blog)?;
+      Self::add_blog_follower(follower.clone(), blog_id, blog)?;
     }
 
     fn unfollow_blog(origin, blog_id: T::BlogId) {
-      let owner = ensure_signed(origin)?;
+      let follower = ensure_signed(origin)?;
 
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
-      ensure!(Self::blog_followed_by_account((owner.clone(), blog_id)), "Account is not following this blog");
+      ensure!(Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is not following this blog");
 
-      <BlogsFollowedByAccount<T>>::mutate(owner.clone(), |blog_ids| {
+      <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| {
         if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
           blog_ids.swap_remove(index);
         }
       });
       <BlogFollowers<T>>::mutate(blog_id, |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == owner.clone()) {
+        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
           account_ids.swap_remove(index);
         }
       });
-      <BlogFollowedByAccount<T>>::remove((owner.clone(), blog_id));
+      <BlogFollowedByAccount<T>>::remove((follower.clone(), blog_id));
 
-      let mut social_account = Self::social_account_by_id(owner.clone()).ok_or("Social account was not found by id")?;
+      let mut social_account = Self::social_account_by_id(follower.clone()).ok_or("Social account was not found by id")?;
       social_account.following_blogs_count = social_account.following_blogs_count
         .checked_sub(1)
         .ok_or("Underflow unfollowing a blog")?;
       blog.followers_count = blog.followers_count.checked_sub(1).ok_or("Underflow unfollowing a blog")?;
 
-      <SocialAccountById<T>>::insert(owner.clone(), social_account);
+      <SocialAccountById<T>>::insert(follower.clone(), social_account);
       <BlogById<T>>::insert(blog_id, blog);
 
-      Self::deposit_event(RawEvent::BlogUnfollowed(owner.clone(), blog_id));
+      Self::deposit_event(RawEvent::BlogUnfollowed(follower.clone(), blog_id));
     }
 
     fn follow_account(origin, account: T::AccountId) {
