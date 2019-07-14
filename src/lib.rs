@@ -16,6 +16,7 @@ extern crate parity_codec_derive;
 
 pub mod currency;
 pub mod governance;
+pub mod social;
 use governance::{council, election, proposals};
 pub mod storage;
 use storage::{data_directory, data_object_storage_registry, data_object_type_registry, downloads};
@@ -25,7 +26,7 @@ mod traits;
 use membership::members;
 mod migration;
 mod roles;
-mod blogs;
+use social::blogs;
 use client::{
     block_builder::api::{self as block_builder_api, CheckInherentsResult, InherentData},
     impl_runtime_apis, runtime_api as client_api,
