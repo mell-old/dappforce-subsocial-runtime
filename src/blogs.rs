@@ -779,22 +779,22 @@ impl<T: Trait> Module<T> {
     reaction_id
   }
 
-  fn add_blog_follower(account: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
+  fn add_blog_follower(follower: T::AccountId, blog_id: T::BlogId, mut blog: Blog<T>) -> dispatch::Result {
 
-    let mut social_account = Self::get_or_new_social_account(account.clone());
+    let mut social_account = Self::get_or_new_social_account(follower.clone());
     social_account.following_blogs_count = social_account.following_blogs_count
       .checked_add(1)
       .ok_or("Overflow following a blog")?;
 
     blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
 
-    <SocialAccountById<T>>::insert(account.clone(), social_account);
+    <SocialAccountById<T>>::insert(follower.clone(), social_account);
     <BlogById<T>>::insert(blog_id, blog);
-    <BlogsFollowedByAccount<T>>::mutate(account.clone(), |ids| ids.push(blog_id));
-    <BlogFollowers<T>>::mutate(blog_id, |ids| ids.push(account.clone()));
-    <BlogFollowedByAccount<T>>::insert((account.clone(), blog_id), true);
+    <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |ids| ids.push(blog_id));
+    <BlogFollowers<T>>::mutate(blog_id, |ids| ids.push(follower.clone()));
+    <BlogFollowedByAccount<T>>::insert((follower.clone(), blog_id), true);
 
-    Self::deposit_event(RawEvent::BlogFollowed(account, blog_id));
+    Self::deposit_event(RawEvent::BlogFollowed(follower, blog_id));
     Ok(())
   }
 
