@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::mock::*;
+use super::blogs::*;
 
 use runtime_io::with_externalities;
 use srml_support::*;
@@ -16,8 +17,8 @@ fn blog_json() -> Vec<u8> {
   b"{\"name\":\"Blog name\",\"desc\":\"Blog content\",\"image\":\"\",\"tags\":[]}".to_vec()
 }
 
-fn blog_update(writers: Option<Vec<u64>>, slug: Option<Vec<u8>>, json: Option<Vec<u8>>) -> blogs::BlogUpdate<Test> {
-  blogs::BlogUpdate {
+fn blog_update(writers: Option<Vec<u64>>, slug: Option<Vec<u8>>, json: Option<Vec<u8>>) -> BlogUpdate<Test> {
+  BlogUpdate {
     writers,
     slug,
     json
@@ -32,8 +33,8 @@ fn post_json() -> Vec<u8> {
   b"{\"title\":\"Post name\",\"body\":\"Post content\",\"image\":\"\",\"tags\":[]}".to_vec()
 }
 
-fn post_update(blog_id: Option<u32>, slug: Option<Vec<u8>>, json: Option<Vec<u8>>) -> blogs::PostUpdate<Test> {
-  blogs::PostUpdate {
+fn post_update(blog_id: Option<u32>, slug: Option<Vec<u8>>, json: Option<Vec<u8>>) -> PostUpdate<Test> {
+  PostUpdate {
     blog_id,
     slug,
     json
@@ -52,7 +53,7 @@ fn _create_blog(origin: Option<Origin>, slug: Option<Vec<u8>>, json: Option<Vec<
   )
 }
 
-fn _update_blog(origin: Option<Origin>, blog_id: Option<u32>, update: Option<blogs::BlogUpdate<Test>>) -> dispatch::Result {
+fn _update_blog(origin: Option<Origin>, blog_id: Option<u32>, update: Option<BlogUpdate<Test>>) -> dispatch::Result {
   Blogs::update_blog(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     blog_id.unwrap_or(1),
@@ -74,7 +75,7 @@ fn _create_post(origin: Option<Origin>, blog_id: Option<u32>, slug: Option<Vec<u
 }
 
 // pub fn update_post(origin, post_id: T::PostId, update: PostUpdate<T>)
-fn _update_post(origin: Option<Origin>, post_id: Option<u32>, update: Option<blogs::PostUpdate<Test>>) -> dispatch::Result {
+fn _update_post(origin: Option<Origin>, post_id: Option<u32>, update: Option<PostUpdate<Test>>) -> dispatch::Result {
   Blogs::update_post(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -110,7 +111,7 @@ fn create_blog_should_fail_short_slug() {
 
   with_externalities(&mut build_ext(), || {
     // Try to catch an error creating a blog with too short slug
-    assert_noop!(_create_blog(None, Some(slug), None), "Blog slug is too short");
+    assert_noop!(_create_blog(None, Some(slug), None), MSG_BLOG_SLUG_IS_TOO_SHORT);
   });
 }
 
@@ -121,7 +122,7 @@ fn create_blog_should_fail_long_slug() {
 
   with_externalities(&mut build_ext(), || {
     // Try to catch an error creating a blog with too long slug
-    assert_noop!(_create_blog(None, Some(slug), None), "Blog slug is too long");
+    assert_noop!(_create_blog(None, Some(slug), None), MSG_BLOG_SLUG_IS_TOO_LONG);
   });
 }
 
@@ -132,7 +133,7 @@ fn create_blog_should_fail_not_unique_slug() {
     // Create a blog with ID 1
     assert_ok!(_create_default_blog());
     // Try to catch an error creating a blog with not unique slug
-    assert_noop!(_create_default_blog(), "Blog slug is not unique");
+    assert_noop!(_create_default_blog(), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
   });
 }
 
@@ -143,7 +144,7 @@ fn create_blog_should_fail_long_json() {
 
   with_externalities(&mut build_ext(), || {
     // Try to catch an error creating a blog with too long json
-    assert_noop!(_create_blog(None, None, Some(json)), "Blog JSON is too long");
+    assert_noop!(_create_blog(None, None, Some(json)), MSG_BLOG_JSON_IS_TOO_LONG);
   });
 }
 
@@ -176,7 +177,7 @@ fn update_blog_should_fail_nothing_to_update() {
     assert_ok!(_create_default_blog());
   
     // Try to catch an error updating a blog with no changes
-    assert_noop!(_update_blog(None, None, None), "Nothing to update in a blog");
+    assert_noop!(_update_blog(None, None, None), MSG_NOTHING_TO_UPDATE_IN_BLOG);
   });
 }
 
@@ -198,7 +199,7 @@ fn update_blog_should_fail_blog_not_found() {
           None
         )
       )
-    ), "Blog was not found by id");
+    ), MSG_BLOG_NOT_FOUND);
   });
 }
 
@@ -220,7 +221,7 @@ fn update_blog_should_fail_not_an_owner() {
           None
         )
       )
-    ), "Only a blog owner can update their blog");
+    ), MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG);
   });
 }
 
@@ -242,7 +243,7 @@ fn update_blog_should_fail_short_slug() {
           None
         )
       )
-    ), "Blog slug is too short");
+    ), MSG_BLOG_SLUG_IS_TOO_SHORT);
   });
 }
 
@@ -264,7 +265,7 @@ fn update_blog_should_fail_long_slug() {
           None
         )
       )
-    ), "Blog slug is too long");
+    ), MSG_BLOG_SLUG_IS_TOO_LONG);
   });
 }
 
@@ -292,7 +293,7 @@ fn update_blog_should_fail_not_unique_slug() {
           None
         )
       )
-    ), "Blog slug is not unique");
+    ), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
   });
 }
 
@@ -314,7 +315,7 @@ fn update_blog_should_fail_long_json() {
           Some(json)
         )
       )
-    ), "Blog JSON is too long");
+    ), MSG_BLOG_JSON_IS_TOO_LONG);
   });
 }
 // TODO blog writers tests
@@ -352,7 +353,7 @@ fn create_post_should_fail_short_slug() {
     assert_ok!(_create_default_blog());
 
     // Try to catch an error creating a post with too short slug
-    assert_noop!(_create_post(None, None, Some(slug), None), "Post slug is too short");
+    assert_noop!(_create_post(None, None, Some(slug), None), MSG_POST_SLUG_IS_TOO_SHORT);
   });
 }
 
@@ -366,7 +367,7 @@ fn create_post_should_fail_long_slug() {
     assert_ok!(_create_default_blog());
 
     // Try to catch an error creating a post with too long slug
-    assert_noop!(_create_post(None, None, Some(slug), None), "Post slug is too long");
+    assert_noop!(_create_post(None, None, Some(slug), None), MSG_POST_SLUG_IS_TOO_LONG);
   });
 }
 
@@ -380,7 +381,7 @@ fn create_post_should_fail_not_unique_slug() {
     assert_ok!(_create_default_post());
 
     // Try to catch an error creating a post with not unique slug
-    assert_noop!(_create_default_post(), "Post slug is not unique");
+    assert_noop!(_create_default_post(), MSG_POST_SLUG_IS_NOT_UNIQUE);
   });
 }
 
@@ -394,7 +395,7 @@ fn create_post_should_fail_long_json() {
     assert_ok!(_create_default_blog());
 
     // Try to catch an error creating a post with too long json
-    assert_noop!(_create_post(None, None, None, Some(json)), "Post JSON is too long");
+    assert_noop!(_create_post(None, None, None, Some(json)), MSG_POST_JSON_IS_TOO_LONG);
   });
 }
 
@@ -431,7 +432,7 @@ fn update_post_should_fail_nothing_to_update() {
     assert_ok!(_create_default_post());
   
     // Try to catch an error updating a post with no changes
-    assert_noop!(_update_post(None, None, None), "Nothing to update in a post");
+    assert_noop!(_update_post(None, None, None), MSG_NOTHING_TO_UPDATE_IN_POST);
   });
 }
 
@@ -455,7 +456,7 @@ fn update_post_should_fail_post_not_found() {
           None
         )
       )
-    ), "Post was not found by id");
+    ), MSG_POST_NOT_FOUND);
   });
 }
 
@@ -479,7 +480,7 @@ fn update_post_should_fail_not_an_owner() {
           None
         )
       )
-    ), "Only a post owner can update their post");
+    ), MSG_ONLY_POST_OWNER_CAN_UPDATE_POST);
   });
 }
 
@@ -503,7 +504,7 @@ fn update_post_should_fail_short_slug() {
           None
         )
       )
-    ), "Post slug is too short");
+    ), MSG_POST_SLUG_IS_TOO_SHORT);
   });
 }
 
@@ -527,7 +528,7 @@ fn update_post_should_fail_long_slug() {
           None
         )
       )
-    ), "Post slug is too long");
+    ), MSG_POST_SLUG_IS_TOO_LONG);
   });
 }
 
@@ -558,7 +559,7 @@ fn update_post_should_fail_not_unique_slug() {
           None
         )
       )
-    ), "Post slug is not unique");
+    ), MSG_POST_SLUG_IS_NOT_UNIQUE);
   });
 }
 
@@ -582,12 +583,12 @@ fn update_post_should_fail_long_json() {
           Some(json)
         )
       )
-    ), "Post JSON is too long");
+    ), MSG_POST_JSON_IS_TOO_LONG);
   });
 }
 
 
-// TODO Comment tests
+// Comment tests
 // TODO Reaction tests
 
 // TODO Blog (un)follow tests
