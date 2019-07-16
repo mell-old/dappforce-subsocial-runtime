@@ -53,9 +53,9 @@ pub struct Blog<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct BlogUpdate<T: Trait> {
-  writers: Option<Vec<T::AccountId>>,
-  slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  pub writers: Option<Vec<T::AccountId>>,
+  pub slug: Option<Vec<u8>>,
+  pub json: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -80,9 +80,9 @@ pub struct Post<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct PostUpdate<T: Trait> {
-  blog_id: Option<T::BlogId>,
-  slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  pub blog_id: Option<T::BlogId>,
+  pub slug: Option<Vec<u8>>,
+  pub json: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -343,7 +343,7 @@ decl_module! {
     }
 
     // TODO use PostUpdate to pass data?
-    fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
@@ -458,7 +458,7 @@ decl_module! {
       Self::deposit_event(RawEvent::CommentReactionCreated(owner.clone(), comment_id, reaction_id));
     }
 
-    fn update_blog(origin, blog_id: T::BlogId, update: BlogUpdate<T>) {
+    pub fn update_blog(origin, blog_id: T::BlogId, update: BlogUpdate<T>) {
       let owner = ensure_signed(origin)?;
       
       let has_updates = 
@@ -511,7 +511,7 @@ decl_module! {
       }
     }
     
-    fn update_post(origin, post_id: T::PostId, update: PostUpdate<T>) {
+    pub fn update_post(origin, post_id: T::PostId, update: PostUpdate<T>) {
       let owner = ensure_signed(origin)?;
       
       let has_updates = 
