@@ -44,7 +44,7 @@ pub struct Blog<T: Trait> {
   // Can be updated by the owner:
   writers: Vec<T::AccountId>,
   slug: Vec<u8>,
-  json: Vec<u8>,
+  ipfs_cid: Vec<u8>,
 
   posts_count: u16,
   followers_count: u32,
@@ -55,7 +55,7 @@ pub struct Blog<T: Trait> {
 pub struct BlogUpdate<T: Trait> {
   writers: Option<Vec<T::AccountId>>,
   slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  ipfs_cid: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -70,7 +70,7 @@ pub struct Post<T: Trait> {
 
   // TODO make slug optional for post or even remove it
   slug: Vec<u8>,
-  json: Vec<u8>,
+  ipfs_cid: Vec<u8>,
 
   comments_count: u16,
   upvotes_count: u16,
@@ -82,7 +82,7 @@ pub struct Post<T: Trait> {
 pub struct PostUpdate<T: Trait> {
   blog_id: Option<T::BlogId>,
   slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  ipfs_cid: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -95,7 +95,7 @@ pub struct Comment<T: Trait> {
   updated: Option<Change<T>>,
 
   // Can be updated by the owner:
-  json: Vec<u8>,
+  ipfs_cid: Vec<u8>,
 
   upvotes_count: u16,
   downvotes_count: u16,
@@ -104,7 +104,7 @@ pub struct Comment<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct CommentUpdate {
-  json: Vec<u8>,
+  ipfs_cid: Vec<u8>,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -237,13 +237,13 @@ decl_module! {
     }
 
     // TODO use BlogUpdate to pass data
-    fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
+    fn create_blog(origin, slug: Vec<u8>, ipfs_cid: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       ensure!(slug.len() >= Self::slug_min_len() as usize, "Blog slug is too short");
       ensure!(slug.len() <= Self::slug_max_len() as usize, "Blog slug is too long");
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), "Blog slug is not unique");
-      ensure!(json.len() <= Self::blog_max_len() as usize, "Blog JSON is too long");
+      ensure!(ipfs_cid.len() <= Self::blog_max_len() as usize, "Blog JSON is too long");
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -252,7 +252,7 @@ decl_module! {
         updated: None,
         writers: vec![],
         slug: slug.clone(),
-        json,
+        ipfs_cid,
         posts_count: 0,
         followers_count: 0
       };
@@ -359,7 +359,7 @@ decl_module! {
     }
 
     // TODO use PostUpdate to pass data?
-    fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
+    fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, ipfs_cid: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
@@ -368,7 +368,7 @@ decl_module! {
       ensure!(slug.len() <= Self::slug_max_len() as usize, "Post slug is too long");
       ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), "Post slug is not unique");
 
-      ensure!(json.len() <= Self::post_max_len() as usize, "Post JSON is too long");
+      ensure!(ipfs_cid.len() <= Self::post_max_len() as usize, "Post JSON is too long");
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -377,7 +377,7 @@ decl_module! {
         created: Self::new_change(owner.clone()),
         updated: None,
         slug: slug.clone(),
-        json,
+        ipfs_cid,
         comments_count: 0,
         upvotes_count: 0,
         downvotes_count: 0,
@@ -394,7 +394,7 @@ decl_module! {
     }
 
     // TODO use CommentUpdate to pass data?
-    fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, json: Vec<u8>) {
+    fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, ipfs_cid: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
@@ -403,7 +403,7 @@ decl_module! {
         ensure!(<CommentById<T>>::exists(id), "Unknown parent comment id");
       }
 
-      ensure!(json.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
+      ensure!(ipfs_cid.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
 
       let comment_id = Self::next_comment_id();
       let new_comment: Comment<T> = Comment {
@@ -412,7 +412,7 @@ decl_module! {
         post_id,
         created: Self::new_change(owner.clone()),
         updated: None,
-        json,
+        ipfs_cid,
         upvotes_count: 0,
         downvotes_count: 0,
       };
@@ -480,7 +480,7 @@ decl_module! {
       let has_updates = 
         update.writers.is_some() ||
         update.slug.is_some() ||
-        update.json.is_some();
+        update.ipfs_cid.is_some();
 
       ensure!(has_updates, "Nothing to update in a blog");
 
@@ -511,10 +511,10 @@ decl_module! {
         }
       }
 
-      if let Some(json) = update.json {
-        if json != blog.json {
-          // TODO validate json.
-          blog.json = json;
+      if let Some(ipfs_cid) = update.ipfs_cid {
+        if ipfs_cid != blog.ipfs_cid {
+          // TODO validate ipfs_cid.
+          blog.ipfs_cid = ipfs_cid;
           fields_updated += 1;
         }
       }
@@ -533,7 +533,7 @@ decl_module! {
       let has_updates = 
         update.blog_id.is_some() ||
         update.slug.is_some() ||
-        update.json.is_some();
+        update.ipfs_cid.is_some();
 
       ensure!(has_updates, "Nothing to update in a post");
 
@@ -555,10 +555,10 @@ decl_module! {
         }
       }
 
-      if let Some(json) = update.json {
-        if json != post.json {
-          // TODO validate json.
-          post.json = json;
+      if let Some(ipfs_cid) = update.ipfs_cid {
+        if ipfs_cid != post.ipfs_cid {
+          // TODO validate ipfs_cid.
+          post.ipfs_cid = ipfs_cid;
           fields_updated += 1;
         }
       }
@@ -596,12 +596,12 @@ decl_module! {
       let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
       ensure!(owner == comment.created.account, "Only comment author can update their comment");
 
-      let json = update.json;
+      let ipfs_cid = update.ipfs_cid;
       // TODO validate min length
-      ensure!(json.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
-      ensure!(json != comment.json, "New comment JSON is the same as old one");
+      ensure!(ipfs_cid.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
+      ensure!(ipfs_cid != comment.ipfs_cid, "New comment JSON is the same as old one");
 
-      comment.json = json;
+      comment.ipfs_cid = ipfs_cid;
       comment.updated = Some(Self::new_change(owner.clone()));
       <CommentById<T>>::insert(comment_id, comment);
       Self::deposit_event(RawEvent::CommentUpdated(owner.clone(), comment_id));
