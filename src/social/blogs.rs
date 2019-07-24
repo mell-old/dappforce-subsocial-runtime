@@ -7,6 +7,59 @@ use system::{self, ensure_signed};
 use runtime_io::print;
 use {timestamp};
 
+pub const DEFAULT_SLUG_MAX_LEN: u32 = 50;
+pub const DEFAULT_SLUG_MIN_LEN: u32 = 5;
+
+pub const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
+pub const DEFAULT_POST_MAX_LEN: u32 = 10_000;
+pub const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
+
+pub const MSG_BLOG_NOT_FOUND: &str = "Blog was not found by id";
+pub const MSG_BLOG_SLUG_IS_TOO_SHORT: &str = "Blog slug is too short";
+pub const MSG_BLOG_SLUG_IS_TOO_LONG: &str = "Blog slug is too long";
+pub const MSG_BLOG_SLUG_IS_NOT_UNIQUE: &str = "Blog slug is not unique";
+pub const MSG_BLOG_JSON_IS_TOO_LONG: &str = "Blog JSON is too long";
+pub const MSG_NOTHING_TO_UPDATE_IN_BLOG: &str = "Nothing to update in a blog";
+pub const MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG: &str = "Only a blog owner can update their blog";
+
+pub const MSG_POST_NOT_FOUND: &str = "Post was not found by id";
+pub const MSG_POST_SLUG_IS_TOO_SHORT: &str = "Post slug is too short";
+pub const MSG_POST_SLUG_IS_TOO_LONG: &str = "Post slug is too long";
+pub const MSG_POST_SLUG_IS_NOT_UNIQUE: &str = "Post slug is not unique";
+pub const MSG_POST_JSON_IS_TOO_LONG: &str = "Post JSON is too long";
+pub const MSG_NOTHING_TO_UPDATE_IN_POST: &str = "Nothing to update in a post";
+pub const MSG_ONLY_POST_OWNER_CAN_UPDATE_POST: &str = "Only post owner can update their post";
+
+pub const MSG_COMMENT_NOT_FOUND: &str = "Comment was not found by id";
+pub const MSG_UNKNOWN_PARENT_COMMENT: &str = "Unknown parent comment id";
+pub const MSG_COMMENT_JSON_IS_TOO_LONG: &str = "COMMENT JSON is too long";
+pub const MSG_ONLY_COMMENT_AUTHOR_CAN_UPDATE_COMMENT: &str = "Only comment author can update their comment";
+pub const MSG_NEW_COMMENT_JSON_DO_NOT_DIFFER: &str = "New comment JSON is the same as old one";
+
+pub const MSG_REACTION_NOT_FOUND: &str = "Reaction was not found by id";
+pub const MSG_ACCOUNT_ALREADY_REACTED_TO_POST: &str = "Account has already reacted to this post. To change a kind of reaction call update_post_reaction()";
+pub const MSG_ACCOUNT_HAS_NOT_REACTED_TO_POST: &str = "Account has not reacted to this post yet. Use create_post_reaction()";
+pub const MSG_NO_POST_REACTION_BY_ACCOUNT_TO_DELETE: &str = "There is no post reaction by account that could be deleted";
+pub const MSG_ACCOUNT_ALREADY_REACTED_TO_COMMENT: &str = "Account has already reacted to this comment. To change a kind of reaction call pub update_comment_reaction()";
+pub const MSG_ACCOUNT_HAS_NOT_REACTED_TO_COMMENT: &str = "Account has not reacted to this comment yet. Use create_comment_reaction()";
+pub const MSG_NO_COMMENT_REACTION_BY_ACCOUNT_TO_DELETE: &str = "There is no comment reaction by account that could be deleted";
+pub const MSG_ONLY_REACTION_OWNER_CAN_UPDATE_REACTION: &str = "Only reaction owner can update their reaction";
+pub const MSG_NEW_REACTION_KIND_DO_NOT_DIFFER: &str = "New reaction kind is the same as old one";
+
+pub const MSG_ACCOUNT_IS_FOLLOWING_BLOG: &str = "Account is already following this blog";
+pub const MSG_ACCOUNT_IS_NOT_FOLLOWING_BLOG: &str = "Account is not following this blog";
+pub const MSG_ACCOUNT_CANNOT_FOLLOW_ITSELF: &str = "Account can not follow itself";
+pub const MSG_ACCOUNT_CANNOT_UNFOLLOW_ITSELF: &str = "Account can not unfollow itself";
+pub const MSG_ACCOUNT_IS_ALREADY_FOLLOWED: &str = "Account is already followed";
+pub const MSG_UNDERFLOW_UNFOLLOWING_BLOG: &str = "Underflow unfollowing blog";
+pub const MSG_OVERFLOW_FOLLOWING_BLOG: &str = "Overflow following blog";
+pub const MSG_OVERFLOW_FOLLOWING_ACCOUNT: &str = "Overflow following account";
+pub const MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT: &str = "Overflow following account";
+
+pub const MSG_SOCIAL_ACCOUNT_NOT_FOUND: &str = "Social account was not found by id";
+pub const MSG_FOLLOWER_ACCOUNT_NOT_FOUND: &str = "Follower social account was not found by id";
+pub const MSG_FOLLOWED_ACCOUNT_NOT_FOUND: &str = "Followed social account was not found by id";
+
 pub trait Trait: system::Trait + timestamp::Trait + MaybeDebug {
 
   type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -53,9 +106,9 @@ pub struct Blog<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct BlogUpdate<T: Trait> {
-  writers: Option<Vec<T::AccountId>>,
-  slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  pub writers: Option<Vec<T::AccountId>>,
+  pub slug: Option<Vec<u8>>,
+  pub json: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -80,9 +133,9 @@ pub struct Post<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct PostUpdate<T: Trait> {
-  blog_id: Option<T::BlogId>,
-  slug: Option<Vec<u8>>,
-  json: Option<Vec<u8>>,
+  pub blog_id: Option<T::BlogId>,
+  pub slug: Option<Vec<u8>>,
+  pub json: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -136,13 +189,6 @@ pub struct SocialAccount {
   following_accounts_count: u16,
   following_blogs_count: u16,
 }
-
-const DEFAULT_SLUG_MIN_LEN: u32 = 5;
-const DEFAULT_SLUG_MAX_LEN: u32 = 50;
-
-const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
-const DEFAULT_POST_MAX_LEN: u32 = 10_000;
-const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
 
 decl_storage! {
   trait Store for Module<T: Trait> as Blogs {
@@ -237,13 +283,13 @@ decl_module! {
     }
 
     // TODO use BlogUpdate to pass data
-    fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
-      ensure!(slug.len() >= Self::slug_min_len() as usize, "Blog slug is too short");
-      ensure!(slug.len() <= Self::slug_max_len() as usize, "Blog slug is too long");
-      ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), "Blog slug is not unique");
-      ensure!(json.len() <= Self::blog_max_len() as usize, "Blog JSON is too long");
+      ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_BLOG_SLUG_IS_TOO_SHORT);
+      ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_BLOG_SLUG_IS_TOO_LONG);
+      ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
+      ensure!(json.len() <= Self::blog_max_len() as usize, MSG_BLOG_JSON_IS_TOO_LONG);
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -268,8 +314,8 @@ decl_module! {
     fn follow_blog(origin, blog_id: T::BlogId) {
       let follower = ensure_signed(origin)?;
 
-      let blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
-      ensure!(!Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is already following this blog");
+      let blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
+      ensure!(!Self::blog_followed_by_account((follower.clone(), blog_id)), MSG_ACCOUNT_IS_FOLLOWING_BLOG);
 
       Self::add_blog_follower_and_insert_blog(follower.clone(), blog_id, blog, false)?;
     }
@@ -277,26 +323,18 @@ decl_module! {
     fn unfollow_blog(origin, blog_id: T::BlogId) {
       let follower = ensure_signed(origin)?;
 
-      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
-      ensure!(Self::blog_followed_by_account((follower.clone(), blog_id)), "Account is not following this blog");
+      let mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
+      ensure!(Self::blog_followed_by_account((follower.clone(), blog_id)), MSG_ACCOUNT_IS_NOT_FOLLOWING_BLOG);
 
-      <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| {
-        if let Some(index) = blog_ids.iter().position(|x| *x == blog_id) {
-          blog_ids.swap_remove(index);
-        }
-      });
-      <BlogFollowers<T>>::mutate(blog_id, |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
-          account_ids.swap_remove(index);
-        }
-      });
+      <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| Self::vec_remove_on(blog_ids, blog_id));
+      <BlogFollowers<T>>::mutate(blog_id, |account_ids| Self::vec_remove_on(account_ids, follower.clone()));
       <BlogFollowedByAccount<T>>::remove((follower.clone(), blog_id));
 
-      let mut social_account = Self::social_account_by_id(follower.clone()).ok_or("Social account was not found by id")?;
+      let mut social_account = Self::social_account_by_id(follower.clone()).ok_or(MSG_SOCIAL_ACCOUNT_NOT_FOUND)?;
       social_account.following_blogs_count = social_account.following_blogs_count
         .checked_sub(1)
-        .ok_or("Underflow unfollowing a blog")?;
-      blog.followers_count = blog.followers_count.checked_sub(1).ok_or("Underflow unfollowing a blog")?;
+        .ok_or(MSG_UNDERFLOW_UNFOLLOWING_BLOG)?;
+      blog.followers_count = blog.followers_count.checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_BLOG)?;
 
       <SocialAccountById<T>>::insert(follower.clone(), social_account);
       <BlogById<T>>::insert(blog_id, blog);
@@ -307,16 +345,16 @@ decl_module! {
     fn follow_account(origin, account: T::AccountId) {
       let follower = ensure_signed(origin)?;
 
-      ensure!(follower != account, "Account can not follow itself");
-      ensure!(!<AccountFollowedByAccount<T>>::exists((follower.clone(), account.clone())), "Account is already followed");
+      ensure!(follower != account, MSG_ACCOUNT_CANNOT_FOLLOW_ITSELF);
+      ensure!(!<AccountFollowedByAccount<T>>::exists((follower.clone(), account.clone())), MSG_ACCOUNT_IS_ALREADY_FOLLOWED);
 
       let mut follower_account = Self::get_or_new_social_account(follower.clone());
       let mut followed_account = Self::get_or_new_social_account(account.clone());
 
       follower_account.following_accounts_count = follower_account.following_accounts_count
-        .checked_add(1).ok_or("Overflow following an account")?;
+        .checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_ACCOUNT)?;
       followed_account.followers_count = followed_account.followers_count
-        .checked_add(1).ok_or("Overflow following an account")?;
+        .checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_ACCOUNT)?;
 
       <SocialAccountById<T>>::insert(follower.clone(), follower_account);
       <SocialAccountById<T>>::insert(account.clone(), followed_account);
@@ -330,27 +368,19 @@ decl_module! {
     fn unfollow_account(origin, account: T::AccountId) {
       let follower = ensure_signed(origin)?;
 
-      ensure!(follower != account, "Account can not unfollow itself");
+      ensure!(follower != account, MSG_ACCOUNT_CANNOT_UNFOLLOW_ITSELF);
 
-      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == account) {
-          account_ids.swap_remove(index);
-        }
-      });
-      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| {
-        if let Some(index) = account_ids.iter().position(|x| *x == follower.clone()) {
-          account_ids.swap_remove(index);
-        }
-      });
+      <AccountsFollowedByAccount<T>>::mutate(follower.clone(), |account_ids| Self::vec_remove_on(account_ids, account.clone()));
+      <AccountFollowers<T>>::mutate(account.clone(), |account_ids| Self::vec_remove_on(account_ids, follower.clone()));
       <AccountFollowedByAccount<T>>::remove((follower.clone(), account.clone()));
 
-      let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or("Follower social account was not found by id")?;
-      let mut followed_account = Self::social_account_by_id(account.clone()).ok_or("Followed social account was not found by id")?;
+      let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or(MSG_FOLLOWER_ACCOUNT_NOT_FOUND)?;
+      let mut followed_account = Self::social_account_by_id(account.clone()).ok_or(MSG_FOLLOWED_ACCOUNT_NOT_FOUND)?;
 
       follower_account.following_accounts_count = follower_account.following_accounts_count
-        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
+        .checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT)?;
       followed_account.followers_count = followed_account.followers_count
-        .checked_sub(1).ok_or("Overflow unfollowing an account")?;
+        .checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT)?;
 
       <SocialAccountById<T>>::insert(follower.clone(), follower_account);
       <SocialAccountById<T>>::insert(account.clone(), followed_account);
@@ -359,16 +389,16 @@ decl_module! {
     }
 
     // TODO use PostUpdate to pass data?
-    fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
-      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
+      let mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
 
-      ensure!(slug.len() >= Self::slug_min_len() as usize, "Post slug is too short");
-      ensure!(slug.len() <= Self::slug_max_len() as usize, "Post slug is too long");
-      ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), "Post slug is not unique");
+      ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
+      ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
+      ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
 
-      ensure!(json.len() <= Self::post_max_len() as usize, "Post JSON is too long");
+      ensure!(json.len() <= Self::post_max_len() as usize, MSG_POST_JSON_IS_TOO_LONG);
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -397,13 +427,13 @@ decl_module! {
     fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, json: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
-      let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
+      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
 
       if let Some(id) = parent_id {
-        ensure!(<CommentById<T>>::exists(id), "Unknown parent comment id");
+        ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
       }
 
-      ensure!(json.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
+      ensure!(json.len() <= Self::comment_max_len() as usize, MSG_COMMENT_JSON_IS_TOO_LONG);
 
       let comment_id = Self::next_comment_id();
       let new_comment: Comment<T> = Comment {
@@ -431,10 +461,10 @@ decl_module! {
 
       ensure!(
         !<PostReactionIdByAccount<T>>::exists((owner.clone(), post_id)),
-        "Account has already reacted to this post. To change a kind of reaction call update_post_reaction()"
+        MSG_ACCOUNT_ALREADY_REACTED_TO_POST
       );
 
-      let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
+      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       let reaction_id = Self::new_reaction(owner.clone(), kind.clone());
 
       <ReactionIdsByPostId<T>>::mutate(post_id, |ids| ids.push(reaction_id));
@@ -455,10 +485,10 @@ decl_module! {
 
       ensure!(
         !<CommentReactionIdByAccount<T>>::exists((owner.clone(), comment_id)),
-        "Account has already reacted to this comment. To change a kind of reaction call update_comment_reaction()"
+        MSG_ACCOUNT_ALREADY_REACTED_TO_COMMENT
       );
 
-      let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
+      let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       let reaction_id = Self::new_reaction(owner.clone(), kind.clone());
 
       <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| ids.push(reaction_id));
@@ -474,7 +504,7 @@ decl_module! {
       Self::deposit_event(RawEvent::CommentReactionCreated(owner.clone(), comment_id, reaction_id));
     }
 
-    fn update_blog(origin, blog_id: T::BlogId, update: BlogUpdate<T>) {
+    pub fn update_blog(origin, blog_id: T::BlogId, update: BlogUpdate<T>) {
       let owner = ensure_signed(origin)?;
       
       let has_updates = 
@@ -482,12 +512,12 @@ decl_module! {
         update.slug.is_some() ||
         update.json.is_some();
 
-      ensure!(has_updates, "Nothing to update in a blog");
+      ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_BLOG);
 
-      let mut blog = Self::blog_by_id(blog_id).ok_or("Blog was not found by id")?;
+      let mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
 
       // TODO ensure: blog writers also should be able to edit this blog:
-      ensure!(owner == blog.created.account, "Only a blog owner can update their blog");
+      ensure!(owner == blog.created.account, MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG);
 
       let mut fields_updated = 0;
 
@@ -503,7 +533,7 @@ decl_module! {
       if let Some(slug) = update.slug {
         if slug != blog.slug {
           // TODO validate slug.
-          ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), "Blog slug is not unique");
+          ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
           <BlogIdBySlug<T>>::remove(blog.slug);
           <BlogIdBySlug<T>>::insert(slug.clone(), blog_id);
           blog.slug = slug;
@@ -527,7 +557,7 @@ decl_module! {
       }
     }
     
-    fn update_post(origin, post_id: T::PostId, update: PostUpdate<T>) {
+    pub fn update_post(origin, post_id: T::PostId, update: PostUpdate<T>) {
       let owner = ensure_signed(origin)?;
       
       let has_updates = 
@@ -535,19 +565,19 @@ decl_module! {
         update.slug.is_some() ||
         update.json.is_some();
 
-      ensure!(has_updates, "Nothing to update in a post");
+      ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_POST);
 
-      let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
+      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
 
       // TODO ensure: blog writers also should be able to edit this post:
-      ensure!(owner == post.created.account, "Only a post owner can update their post");
+      ensure!(owner == post.created.account, MSG_ONLY_POST_OWNER_CAN_UPDATE_POST);
 
       let mut fields_updated = 0;
 
       if let Some(slug) = update.slug {
         if slug != post.slug {
           // TODO validate slug.
-          ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), "Post slug is not unique");
+          ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
           <PostIdBySlug<T>>::remove(post.slug);
           <PostIdBySlug<T>>::insert(slug.clone(), post_id);
           post.slug = slug;
@@ -569,11 +599,7 @@ decl_module! {
           Self::ensure_blog_exists(blog_id)?;
           
           // Remove post_id from its old blog:
-          <PostIdsByBlogId<T>>::mutate(post.blog_id, |post_ids| {
-            if let Some(index) = post_ids.iter().position(|x| *x == post_id) {
-              post_ids.swap_remove(index);
-            }
-          });
+          <PostIdsByBlogId<T>>::mutate(post.blog_id, |post_ids| Self::vec_remove_on(post_ids, post_id));
           
           // Add post_id to its new blog:
           <PostIdsByBlogId<T>>::mutate(blog_id.clone(), |ids| ids.push(post_id));
@@ -593,13 +619,13 @@ decl_module! {
     fn update_comment(origin, comment_id: T::CommentId, update: CommentUpdate) {
       let owner = ensure_signed(origin)?;
 
-      let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
-      ensure!(owner == comment.created.account, "Only comment author can update their comment");
+      let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+      ensure!(owner == comment.created.account, MSG_ONLY_COMMENT_AUTHOR_CAN_UPDATE_COMMENT);
 
       let json = update.json;
       // TODO validate min length
-      ensure!(json.len() <= Self::comment_max_len() as usize, "Comment JSON is too long");
-      ensure!(json != comment.json, "New comment JSON is the same as old one");
+      ensure!(json.len() <= Self::comment_max_len() as usize, MSG_COMMENT_JSON_IS_TOO_LONG);
+      ensure!(json != comment.json, MSG_NEW_COMMENT_JSON_DO_NOT_DIFFER);
 
       comment.json = json;
       comment.updated = Some(Self::new_change(owner.clone()));
@@ -612,18 +638,18 @@ decl_module! {
 
       ensure!(
         <PostReactionIdByAccount<T>>::exists((owner.clone(), post_id)),
-        "Account has not reacted to this post yet. Use create_post_reaction()"
+        MSG_ACCOUNT_HAS_NOT_REACTED_TO_POST
       );
 
-      let mut reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
-      ensure!(owner == reaction.created.account, "Only reaction owner can update their reaction");
-      ensure!(reaction.kind != new_kind, "Current account reaction is the same as requested");
+      let mut reaction = Self::reaction_by_id(reaction_id).ok_or(MSG_REACTION_NOT_FOUND)?;
+      ensure!(owner == reaction.created.account, MSG_ONLY_REACTION_OWNER_CAN_UPDATE_REACTION);
+      ensure!(reaction.kind != new_kind, MSG_NEW_REACTION_KIND_DO_NOT_DIFFER);
 
       reaction.kind = new_kind;
       reaction.updated = Some(Self::new_change(owner.clone()));
       <ReactionById<T>>::insert(reaction_id, reaction);
 
-      let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
+      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       match new_kind {
         ReactionKind::Upvote => {
           post.upvotes_count += 1;
@@ -645,18 +671,18 @@ decl_module! {
 
       ensure!(
         <CommentReactionIdByAccount<T>>::exists((owner.clone(), comment_id)),
-        "Account has not reacted to this comment yet. Use create_comment_reaction()"
+        MSG_ACCOUNT_HAS_NOT_REACTED_TO_COMMENT
       );
 
-      let mut reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
-      ensure!(owner == reaction.created.account, "Only reaction owner can update their reaction");
-      ensure!(reaction.kind != new_kind, "Current account reaction is the same as requested");
+      let mut reaction = Self::reaction_by_id(reaction_id).ok_or(MSG_REACTION_NOT_FOUND)?;
+      ensure!(owner == reaction.created.account, MSG_ONLY_REACTION_OWNER_CAN_UPDATE_REACTION);
+      ensure!(reaction.kind != new_kind, MSG_NEW_REACTION_KIND_DO_NOT_DIFFER);
 
       reaction.kind = new_kind;
       reaction.updated = Some(Self::new_change(owner.clone()));
       <ReactionById<T>>::insert(reaction_id, reaction);
 
-      let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
+      let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       match new_kind {
         ReactionKind::Upvote => {
           comment.upvotes_count += 1;
@@ -687,19 +713,15 @@ decl_module! {
 
       ensure!(
         <PostReactionIdByAccount<T>>::exists((owner.clone(), post_id)),
-        "There is no post reaction by account that could be deleted"
+        MSG_NO_POST_REACTION_BY_ACCOUNT_TO_DELETE
       );
       
-      let reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
-      ensure!(owner == reaction.created.account, "Only reaction owner can delete their reaction");
+      let reaction = Self::reaction_by_id(reaction_id).ok_or(MSG_REACTION_NOT_FOUND)?;
+      ensure!(owner == reaction.created.account, MSG_ONLY_REACTION_OWNER_CAN_UPDATE_REACTION);
 
-      <ReactionIdsByPostId<T>>::mutate(post_id, |ids| {
-        if let Some(index) = ids.iter().position(|x| *x == reaction_id) {
-          ids.swap_remove(index);
-        }
-      });
+      <ReactionIdsByPostId<T>>::mutate(post_id, |ids| Self::vec_remove_on(ids, reaction_id));
 
-      let mut post = Self::post_by_id(post_id).ok_or("Post was not found by id")?;
+      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       match reaction.kind {
         ReactionKind::Upvote => post.upvotes_count -= 1,
         ReactionKind::Downvote => post.downvotes_count -= 1,
@@ -718,19 +740,15 @@ decl_module! {
 
       ensure!(
         <CommentReactionIdByAccount<T>>::exists((owner.clone(), comment_id)),
-        "There is no comment reaction by account that could be deleted"
+        MSG_NO_COMMENT_REACTION_BY_ACCOUNT_TO_DELETE
       );
       
-      let reaction = Self::reaction_by_id(reaction_id).ok_or("Reaction was not found by id")?;
-      ensure!(owner == reaction.created.account, "Only reaction owner can delete their reaction");
+      let reaction = Self::reaction_by_id(reaction_id).ok_or(MSG_REACTION_NOT_FOUND)?;
+      ensure!(owner == reaction.created.account, MSG_ONLY_REACTION_OWNER_CAN_UPDATE_REACTION);
 
-      <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| {
-        if let Some(index) = ids.iter().position(|x| *x == reaction_id) {
-          ids.swap_remove(index);
-        }
-      });
+      <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| Self::vec_remove_on(ids, reaction_id));
       
-      let mut comment = Self::comment_by_id(comment_id).ok_or("Comment was not found by id")?;
+      let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       match reaction.kind {
         ReactionKind::Upvote => comment.upvotes_count -= 1,
         ReactionKind::Downvote => comment.downvotes_count -= 1,
@@ -751,7 +769,7 @@ decl_module! {
 impl<T: Trait> Module<T> {
 
   fn ensure_blog_exists(blog_id: T::BlogId) -> dispatch::Result {
-    ensure!(<BlogById<T>>::exists(blog_id), "Unknown blog id");
+    ensure!(<BlogById<T>>::exists(blog_id), MSG_BLOG_NOT_FOUND);
     Ok(())
   }
 
@@ -788,11 +806,11 @@ impl<T: Trait> Module<T> {
     let mut social_account = Self::get_or_new_social_account(follower.clone());
     social_account.following_blogs_count = social_account.following_blogs_count
       .checked_add(1)
-      .ok_or("Overflow following a blog")?;
+      .ok_or(MSG_OVERFLOW_FOLLOWING_BLOG)?;
 
     <SocialAccountById<T>>::insert(follower.clone(), social_account);
 
-    blog.followers_count = blog.followers_count.checked_add(1).ok_or("Overflow following a blog")?;
+    blog.followers_count = blog.followers_count.checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_BLOG)?;
     <BlogById<T>>::insert(blog_id, blog);
     if is_new_blog {
       Self::deposit_event(RawEvent::BlogCreated(follower.clone(), blog_id));
@@ -815,6 +833,12 @@ impl<T: Trait> Module<T> {
         following_accounts_count: 0,
         following_blogs_count: 0
       }
+    }
+  }
+
+  fn vec_remove_on<F: PartialEq>(vector: &mut Vec<F>, element: F) {
+    if let Some(index) = vector.iter().position(|x| *x == element) {
+      vector.swap_remove(index);
     }
   }
 }
