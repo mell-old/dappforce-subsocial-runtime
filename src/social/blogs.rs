@@ -57,6 +57,8 @@ pub const MSG_SOCIAL_ACCOUNT_NOT_FOUND: &str = "Social account was not found by 
 pub const MSG_FOLLOWER_ACCOUNT_NOT_FOUND: &str = "Follower social account was not found by id";
 pub const MSG_FOLLOWED_ACCOUNT_NOT_FOUND: &str = "Followed social account was not found by id";
 
+pub const MSG_IPFS_IS_INCORRECT: &str = "IPFS-hash is not correct";
+
 pub trait Trait: system::Trait + timestamp::Trait + MaybeDebug {
 
   type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -286,7 +288,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_BLOG_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_BLOG_SLUG_IS_TOO_LONG);
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
-      // TODO validate ipfs_hash
+      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -394,7 +396,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
       ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-      // TODO validate ipfs_hash
+      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -537,7 +539,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != blog.ipfs_hash {
-          // TODO validate ipfs_hash
+          ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
           blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
@@ -581,7 +583,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
-          // TODO validate ipfs_hash
+          ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
           post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
