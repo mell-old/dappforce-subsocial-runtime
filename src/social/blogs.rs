@@ -18,7 +18,6 @@ pub const MSG_BLOG_NOT_FOUND: &str = "Blog was not found by id";
 pub const MSG_BLOG_SLUG_IS_TOO_SHORT: &str = "Blog slug is too short";
 pub const MSG_BLOG_SLUG_IS_TOO_LONG: &str = "Blog slug is too long";
 pub const MSG_BLOG_SLUG_IS_NOT_UNIQUE: &str = "Blog slug is not unique";
-pub const MSG_BLOG_JSON_IS_TOO_LONG: &str = "Blog JSON is too long";
 pub const MSG_NOTHING_TO_UPDATE_IN_BLOG: &str = "Nothing to update in a blog";
 pub const MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG: &str = "Only a blog owner can update their blog";
 
@@ -26,15 +25,13 @@ pub const MSG_POST_NOT_FOUND: &str = "Post was not found by id";
 pub const MSG_POST_SLUG_IS_TOO_SHORT: &str = "Post slug is too short";
 pub const MSG_POST_SLUG_IS_TOO_LONG: &str = "Post slug is too long";
 pub const MSG_POST_SLUG_IS_NOT_UNIQUE: &str = "Post slug is not unique";
-pub const MSG_POST_JSON_IS_TOO_LONG: &str = "Post JSON is too long";
 pub const MSG_NOTHING_TO_UPDATE_IN_POST: &str = "Nothing to update in a post";
 pub const MSG_ONLY_POST_OWNER_CAN_UPDATE_POST: &str = "Only post owner can update their post";
 
 pub const MSG_COMMENT_NOT_FOUND: &str = "Comment was not found by id";
 pub const MSG_UNKNOWN_PARENT_COMMENT: &str = "Unknown parent comment id";
-pub const MSG_COMMENT_JSON_IS_TOO_LONG: &str = "COMMENT JSON is too long";
 pub const MSG_ONLY_COMMENT_AUTHOR_CAN_UPDATE_COMMENT: &str = "Only comment author can update their comment";
-pub const MSG_NEW_COMMENT_JSON_DO_NOT_DIFFER: &str = "New comment JSON is the same as old one";
+pub const MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER: &str = "New comment IPFS-hash is the same as old one";
 
 pub const MSG_REACTION_NOT_FOUND: &str = "Reaction was not found by id";
 pub const MSG_ACCOUNT_ALREADY_REACTED_TO_POST: &str = "Account has already reacted to this post. To change a kind of reaction call update_post_reaction()";
@@ -97,7 +94,7 @@ pub struct Blog<T: Trait> {
   // Can be updated by the owner:
   writers: Vec<T::AccountId>,
   slug: Vec<u8>,
-  json: Vec<u8>,
+  ipfs_hash: Vec<u8>,
 
   posts_count: u16,
   followers_count: u32,
@@ -108,7 +105,7 @@ pub struct Blog<T: Trait> {
 pub struct BlogUpdate<T: Trait> {
   pub writers: Option<Vec<T::AccountId>>,
   pub slug: Option<Vec<u8>>,
-  pub json: Option<Vec<u8>>,
+  pub ipfs_hash: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -123,7 +120,7 @@ pub struct Post<T: Trait> {
 
   // TODO make slug optional for post or even remove it
   slug: Vec<u8>,
-  json: Vec<u8>,
+  ipfs_hash: Vec<u8>,
 
   comments_count: u16,
   upvotes_count: u16,
@@ -135,7 +132,7 @@ pub struct Post<T: Trait> {
 pub struct PostUpdate<T: Trait> {
   pub blog_id: Option<T::BlogId>,
   pub slug: Option<Vec<u8>>,
-  pub json: Option<Vec<u8>>,
+  pub ipfs_hash: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -148,7 +145,7 @@ pub struct Comment<T: Trait> {
   updated: Option<Change<T>>,
 
   // Can be updated by the owner:
-  json: Vec<u8>,
+  ipfs_hash: Vec<u8>,
 
   upvotes_count: u16,
   downvotes_count: u16,
@@ -157,7 +154,7 @@ pub struct Comment<T: Trait> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct CommentUpdate {
-  json: Vec<u8>,
+  ipfs_hash: Vec<u8>,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -283,13 +280,13 @@ decl_module! {
     }
 
     // TODO use BlogUpdate to pass data
-    pub fn create_blog(origin, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_blog(origin, slug: Vec<u8>, ipfs_hash: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_BLOG_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_BLOG_SLUG_IS_TOO_LONG);
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
-      ensure!(json.len() <= Self::blog_max_len() as usize, MSG_BLOG_JSON_IS_TOO_LONG);
+      // TODO validate ipfs_hash
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -298,7 +295,7 @@ decl_module! {
         updated: None,
         writers: vec![],
         slug: slug.clone(),
-        json,
+        ipfs_hash,
         posts_count: 0,
         followers_count: 0
       };
@@ -389,7 +386,7 @@ decl_module! {
     }
 
     // TODO use PostUpdate to pass data?
-    pub fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, json: Vec<u8>) {
+    pub fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, ipfs_hash: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
@@ -397,8 +394,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
       ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-
-      ensure!(json.len() <= Self::post_max_len() as usize, MSG_POST_JSON_IS_TOO_LONG);
+      // TODO validate ipfs_hash
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -407,7 +403,7 @@ decl_module! {
         created: Self::new_change(owner.clone()),
         updated: None,
         slug: slug.clone(),
-        json,
+        ipfs_hash,
         comments_count: 0,
         upvotes_count: 0,
         downvotes_count: 0,
@@ -424,7 +420,7 @@ decl_module! {
     }
 
     // TODO use CommentUpdate to pass data?
-    fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, json: Vec<u8>) {
+    fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, ipfs_hash: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
@@ -433,8 +429,6 @@ decl_module! {
         ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
       }
 
-      ensure!(json.len() <= Self::comment_max_len() as usize, MSG_COMMENT_JSON_IS_TOO_LONG);
-
       let comment_id = Self::next_comment_id();
       let new_comment: Comment<T> = Comment {
         id: comment_id,
@@ -442,7 +436,7 @@ decl_module! {
         post_id,
         created: Self::new_change(owner.clone()),
         updated: None,
-        json,
+        ipfs_hash,
         upvotes_count: 0,
         downvotes_count: 0,
       };
@@ -510,7 +504,7 @@ decl_module! {
       let has_updates = 
         update.writers.is_some() ||
         update.slug.is_some() ||
-        update.json.is_some();
+        update.ipfs_hash.is_some();
 
       ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_BLOG);
 
@@ -541,10 +535,10 @@ decl_module! {
         }
       }
 
-      if let Some(json) = update.json {
-        if json != blog.json {
-          // TODO validate json.
-          blog.json = json;
+      if let Some(ipfs_hash) = update.ipfs_hash {
+        if ipfs_hash != blog.ipfs_hash {
+          // TODO validate ipfs_hash
+          blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
       }
@@ -563,7 +557,7 @@ decl_module! {
       let has_updates = 
         update.blog_id.is_some() ||
         update.slug.is_some() ||
-        update.json.is_some();
+        update.ipfs_hash.is_some();
 
       ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_POST);
 
@@ -585,10 +579,10 @@ decl_module! {
         }
       }
 
-      if let Some(json) = update.json {
-        if json != post.json {
-          // TODO validate json.
-          post.json = json;
+      if let Some(ipfs_hash) = update.ipfs_hash {
+        if ipfs_hash != post.ipfs_hash {
+          // TODO validate ipfs_hash
+          post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
       }
@@ -622,12 +616,10 @@ decl_module! {
       let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       ensure!(owner == comment.created.account, MSG_ONLY_COMMENT_AUTHOR_CAN_UPDATE_COMMENT);
 
-      let json = update.json;
-      // TODO validate min length
-      ensure!(json.len() <= Self::comment_max_len() as usize, MSG_COMMENT_JSON_IS_TOO_LONG);
-      ensure!(json != comment.json, MSG_NEW_COMMENT_JSON_DO_NOT_DIFFER);
+      let ipfs_hash = update.ipfs_hash;
+      ensure!(ipfs_hash != comment.ipfs_hash, MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER);
 
-      comment.json = json;
+      comment.ipfs_hash = ipfs_hash;
       comment.updated = Some(Self::new_change(owner.clone()));
       <CommentById<T>>::insert(comment_id, comment);
       Self::deposit_event(RawEvent::CommentUpdated(owner.clone(), comment_id));
