@@ -95,11 +95,13 @@ pub struct Blog<T: Trait> {
 
   // Can be updated by the owner:
   writers: Vec<T::AccountId>,
-  slug: Vec<u8>,
-  ipfs_hash: Vec<u8>,
+  pub slug: Vec<u8>,
+  pub ipfs_hash: Vec<u8>,
 
   posts_count: u16,
   followers_count: u32,
+
+  pub edit_history: Option<Vec<HistoryRecord<T>>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -114,19 +116,21 @@ pub struct BlogUpdate<T: Trait> {
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Post<T: Trait> {
   id: T::PostId,
-  blog_id: T::BlogId,
+  pub blog_id: T::BlogId,
   created: Change<T>,
   updated: Option<Change<T>>,
 
   // Next fields can be updated by the owner only:
 
   // TODO make slug optional for post or even remove it
-  slug: Vec<u8>,
-  ipfs_hash: Vec<u8>,
+  pub slug: Vec<u8>,
+  pub ipfs_hash: Vec<u8>,
 
-  comments_count: u16,
-  upvotes_count: u16,
-  downvotes_count: u16,
+  pub comments_count: u16,
+  pub upvotes_count: u16,
+  pub downvotes_count: u16,
+
+  pub edit_history: Option<Vec<HistoryRecord<T>>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -147,16 +151,18 @@ pub struct Comment<T: Trait> {
   updated: Option<Change<T>>,
 
   // Can be updated by the owner:
-  ipfs_hash: Vec<u8>,
+  pub ipfs_hash: Vec<u8>,
 
-  upvotes_count: u16,
-  downvotes_count: u16,
+  pub upvotes_count: u16,
+  pub downvotes_count: u16,
+
+  pub edit_history: Option<Vec<HistoryRecord<T>>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct CommentUpdate {
-  ipfs_hash: Vec<u8>,
+  pub ipfs_hash: Vec<u8>,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -178,7 +184,7 @@ pub struct Reaction<T: Trait> {
   id: T::ReactionId,
   created: Change<T>,
   updated: Option<Change<T>>,
-  kind: ReactionKind,
+  pub kind: ReactionKind,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -187,6 +193,13 @@ pub struct SocialAccount {
   followers_count: u32,
   following_accounts_count: u16,
   following_blogs_count: u16,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct HistoryRecord<T: Trait> {
+  created: Change<T>,
+  ipfs_hash: Vec<u8>,
 }
 
 decl_storage! {
@@ -299,7 +312,8 @@ decl_module! {
         slug: slug.clone(),
         ipfs_hash,
         posts_count: 0,
-        followers_count: 0
+        followers_count: 0,
+        edit_history: None
       };
 
       <BlogIdsByOwner<T>>::mutate(owner.clone(), |ids| ids.push(blog_id));
@@ -409,6 +423,7 @@ decl_module! {
         comments_count: 0,
         upvotes_count: 0,
         downvotes_count: 0,
+        edit_history: None,
       };
 
       <PostById<T>>::insert(post_id, new_post);
@@ -422,10 +437,11 @@ decl_module! {
     }
 
     // TODO use CommentUpdate to pass data?
-    fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, ipfs_hash: Vec<u8>) {
+    pub fn create_comment(origin, post_id: T::PostId, parent_id: Option<T::CommentId>, ipfs_hash: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
 
       if let Some(id) = parent_id {
         ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
@@ -441,6 +457,7 @@ decl_module! {
         ipfs_hash,
         upvotes_count: 0,
         downvotes_count: 0,
+        edit_history: None,
       };
 
       <CommentById<T>>::insert(comment_id, new_comment);
@@ -452,7 +469,7 @@ decl_module! {
       <PostById<T>>::insert(post_id, post); // TODO maybe use mutate instead of insert?
     }
 
-    fn create_post_reaction(origin, post_id: T::PostId, kind: ReactionKind) {
+    pub fn create_post_reaction(origin, post_id: T::PostId, kind: ReactionKind) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
@@ -476,7 +493,7 @@ decl_module! {
       Self::deposit_event(RawEvent::PostReactionCreated(owner.clone(), post_id, reaction_id));
     }
 
-    fn create_comment_reaction(origin, comment_id: T::CommentId, kind: ReactionKind) {
+    pub fn create_comment_reaction(origin, comment_id: T::CommentId, kind: ReactionKind) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
@@ -540,6 +557,14 @@ decl_module! {
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != blog.ipfs_hash {
           ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+
+          let mut new_edit_history = blog.clone().edit_history.unwrap_or(Vec::new());
+          new_edit_history.push(HistoryRecord {
+            created: Self::new_change(owner.clone()),
+            ipfs_hash: blog.ipfs_hash
+          });
+          blog.edit_history = Some(new_edit_history);
+
           blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
@@ -584,6 +609,14 @@ decl_module! {
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
           ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+
+          let mut new_edit_history = post.clone().edit_history.unwrap_or(Vec::new());
+          new_edit_history.push(HistoryRecord {
+            created: Self::new_change(owner.clone()),
+            ipfs_hash: post.ipfs_hash
+          });
+          post.edit_history = Some(new_edit_history);
+
           post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
@@ -612,7 +645,7 @@ decl_module! {
       }
     }
     
-    fn update_comment(origin, comment_id: T::CommentId, update: CommentUpdate) {
+    pub fn update_comment(origin, comment_id: T::CommentId, update: CommentUpdate) {
       let owner = ensure_signed(origin)?;
 
       let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
@@ -620,6 +653,14 @@ decl_module! {
 
       let ipfs_hash = update.ipfs_hash;
       ensure!(ipfs_hash != comment.ipfs_hash, MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER);
+      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+
+      let mut new_edit_history = comment.clone().edit_history.unwrap_or(Vec::new());
+      new_edit_history.push(HistoryRecord {
+        created: Self::new_change(owner.clone()),
+        ipfs_hash: comment.ipfs_hash
+      });
+      comment.edit_history = Some(new_edit_history);
 
       comment.ipfs_hash = ipfs_hash;
       comment.updated = Some(Self::new_change(owner.clone()));
@@ -627,7 +668,7 @@ decl_module! {
       Self::deposit_event(RawEvent::CommentUpdated(owner.clone(), comment_id));
     }
 
-    fn update_post_reaction(origin, post_id: T::PostId, reaction_id: T::ReactionId, new_kind: ReactionKind) {
+    pub fn update_post_reaction(origin, post_id: T::PostId, reaction_id: T::ReactionId, new_kind: ReactionKind) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
@@ -660,7 +701,7 @@ decl_module! {
       Self::deposit_event(RawEvent::PostReactionUpdated(owner.clone(), post_id, reaction_id));
     }
 
-    fn update_comment_reaction(origin, comment_id: T::CommentId, reaction_id: T::ReactionId, new_kind: ReactionKind) {
+    pub fn update_comment_reaction(origin, comment_id: T::CommentId, reaction_id: T::ReactionId, new_kind: ReactionKind) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
@@ -702,7 +743,7 @@ decl_module! {
     
     // TODO fn delete_comment(origin, comment_id: T::CommentId) {}
 
-    fn delete_post_reaction(origin, post_id: T::PostId, reaction_id: T::ReactionId) {
+    pub fn delete_post_reaction(origin, post_id: T::PostId, reaction_id: T::ReactionId) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
@@ -729,7 +770,7 @@ decl_module! {
       Self::deposit_event(RawEvent::PostReactionDeleted(owner.clone(), post_id, reaction_id));
     }
 
-    fn delete_comment_reaction(origin, comment_id: T::CommentId, reaction_id: T::ReactionId) {
+    pub fn delete_comment_reaction(origin, comment_id: T::CommentId, reaction_id: T::ReactionId) {
       let owner = ensure_signed(origin)?;
 
       ensure!(
