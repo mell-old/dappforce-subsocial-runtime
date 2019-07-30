@@ -79,7 +79,7 @@ pub trait Trait: system::Trait + timestamp::Trait + MaybeDebug {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Copy, Encode, Decode, PartialEq)]
 pub struct Change<T: Trait> {
-  account: T::AccountId,
+  pub account: T::AccountId,
   block: T::BlockNumber,
   time: T::Moment,
 }
@@ -90,18 +90,18 @@ pub struct Change<T: Trait> {
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Blog<T: Trait> {
   id: T::BlogId,
-  created: Change<T>,
+  pub created: Change<T>,
   updated: Option<Change<T>>,
 
   // Can be updated by the owner:
-  writers: Vec<T::AccountId>,
+  pub writers: Vec<T::AccountId>,
   pub slug: Vec<u8>,
   pub ipfs_hash: Vec<u8>,
 
-  posts_count: u16,
-  followers_count: u32,
+  pub posts_count: u16,
+  pub followers_count: u32,
 
-  pub edit_history: Option<Vec<HistoryRecord<T>>>,
+  pub edit_history: Vec<BlogHistoryRecord<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -114,10 +114,17 @@ pub struct BlogUpdate<T: Trait> {
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
+pub struct BlogHistoryRecord<T: Trait> {
+  edited: Change<T>,
+  pub old_data: BlogUpdate<T>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Post<T: Trait> {
   id: T::PostId,
   pub blog_id: T::BlogId,
-  created: Change<T>,
+  pub created: Change<T>,
   updated: Option<Change<T>>,
 
   // Next fields can be updated by the owner only:
@@ -130,7 +137,7 @@ pub struct Post<T: Trait> {
   pub upvotes_count: u16,
   pub downvotes_count: u16,
 
-  pub edit_history: Option<Vec<HistoryRecord<T>>>,
+  pub edit_history: Vec<PostHistoryRecord<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -139,6 +146,13 @@ pub struct PostUpdate<T: Trait> {
   pub blog_id: Option<T::BlogId>,
   pub slug: Option<Vec<u8>>,
   pub ipfs_hash: Option<Vec<u8>>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct PostHistoryRecord<T: Trait> {
+  edited: Change<T>,
+  pub old_data: PostUpdate<T>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -156,13 +170,20 @@ pub struct Comment<T: Trait> {
   pub upvotes_count: u16,
   pub downvotes_count: u16,
 
-  pub edit_history: Option<Vec<HistoryRecord<T>>>,
+  pub edit_history: Vec<CommentHistoryRecord<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct CommentUpdate {
   pub ipfs_hash: Vec<u8>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct CommentHistoryRecord<T: Trait> {
+  edited: Change<T>,
+  pub old_data: CommentUpdate,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -193,13 +214,6 @@ pub struct SocialAccount {
   followers_count: u32,
   following_accounts_count: u16,
   following_blogs_count: u16,
-}
-
-#[cfg_attr(feature = "std", derive(Debug))]
-#[derive(Clone, Encode, Decode, PartialEq)]
-pub struct HistoryRecord<T: Trait> {
-  created: Change<T>,
-  ipfs_hash: Vec<u8>,
 }
 
 decl_storage! {
@@ -313,7 +327,7 @@ decl_module! {
         ipfs_hash,
         posts_count: 0,
         followers_count: 0,
-        edit_history: None
+        edit_history: vec![]
       };
 
       <BlogIdsByOwner<T>>::mutate(owner.clone(), |ids| ids.push(blog_id));
@@ -423,7 +437,7 @@ decl_module! {
         comments_count: 0,
         upvotes_count: 0,
         downvotes_count: 0,
-        edit_history: None,
+        edit_history: vec![],
       };
 
       <PostById<T>>::insert(post_id, new_post);
@@ -457,7 +471,7 @@ decl_module! {
         ipfs_hash,
         upvotes_count: 0,
         downvotes_count: 0,
-        edit_history: None,
+        edit_history: vec![],
       };
 
       <CommentById<T>>::insert(comment_id, new_comment);
@@ -533,11 +547,17 @@ decl_module! {
       ensure!(owner == blog.created.account, MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG);
 
       let mut fields_updated = 0;
+      let mut new_history_record = BlogHistoryRecord {
+        edited: Self::new_change(owner.clone()),
+        old_data: BlogUpdate {writers: None, slug: None, ipfs_hash: None}
+      };
 
       if let Some(writers) = update.writers {
         if writers != blog.writers {
           // TODO validate writers.
           // TODO update BlogIdsByWriter: insert new, delete removed, update only changed writers.
+          new_history_record.old_data.writers = Some(blog.writers);
+
           blog.writers = writers;
           fields_updated += 1;
         }
@@ -547,8 +567,9 @@ decl_module! {
         if slug != blog.slug {
           // TODO validate slug.
           ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
-          <BlogIdBySlug<T>>::remove(blog.slug);
+          <BlogIdBySlug<T>>::remove(blog.slug.clone());
           <BlogIdBySlug<T>>::insert(slug.clone(), blog_id);
+          new_history_record.old_data.slug = Some(blog.slug);
           blog.slug = slug;
           fields_updated += 1;
         }
@@ -557,14 +578,7 @@ decl_module! {
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != blog.ipfs_hash {
           ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
-
-          let mut new_edit_history = blog.clone().edit_history.unwrap_or(Vec::new());
-          new_edit_history.push(HistoryRecord {
-            created: Self::new_change(owner.clone()),
-            ipfs_hash: blog.ipfs_hash
-          });
-          blog.edit_history = Some(new_edit_history);
-
+          new_history_record.old_data.ipfs_hash = Some(blog.ipfs_hash);
           blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
@@ -573,6 +587,7 @@ decl_module! {
       // Update this blog only if at lest one field should be updated:
       if fields_updated > 0 {
         blog.updated = Some(Self::new_change(owner.clone()));
+        blog.edit_history.push(new_history_record);
         <BlogById<T>>::insert(blog_id, blog);
         Self::deposit_event(RawEvent::BlogUpdated(owner.clone(), blog_id));
       }
@@ -594,13 +609,18 @@ decl_module! {
       ensure!(owner == post.created.account, MSG_ONLY_POST_OWNER_CAN_UPDATE_POST);
 
       let mut fields_updated = 0;
+      let mut new_history_record = PostHistoryRecord {
+        edited: Self::new_change(owner.clone()),
+        old_data: PostUpdate {blog_id: None, slug: None, ipfs_hash: None}
+      };
 
       if let Some(slug) = update.slug {
         if slug != post.slug {
           // TODO validate slug.
           ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-          <PostIdBySlug<T>>::remove(post.slug);
+          <PostIdBySlug<T>>::remove(post.slug.clone());
           <PostIdBySlug<T>>::insert(slug.clone(), post_id);
+          new_history_record.old_data.slug = Some(post.slug);
           post.slug = slug;
           fields_updated += 1;
         }
@@ -609,14 +629,7 @@ decl_module! {
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
           ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
-
-          let mut new_edit_history = post.clone().edit_history.unwrap_or(Vec::new());
-          new_edit_history.push(HistoryRecord {
-            created: Self::new_change(owner.clone()),
-            ipfs_hash: post.ipfs_hash
-          });
-          post.edit_history = Some(new_edit_history);
-
+          new_history_record.old_data.ipfs_hash = Some(post.ipfs_hash);
           post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
         }
@@ -632,6 +645,7 @@ decl_module! {
           
           // Add post_id to its new blog:
           <PostIdsByBlogId<T>>::mutate(blog_id.clone(), |ids| ids.push(post_id));
+          new_history_record.old_data.blog_id = Some(post.blog_id);
           post.blog_id = blog_id;
           fields_updated += 1;
         }
@@ -640,6 +654,7 @@ decl_module! {
       // Update this post only if at lest one field should be updated:
       if fields_updated > 0 {
         post.updated = Some(Self::new_change(owner.clone()));
+        post.edit_history.push(new_history_record);
         <PostById<T>>::insert(post_id, post);
         Self::deposit_event(RawEvent::PostUpdated(owner.clone(), post_id));
       }
@@ -655,12 +670,11 @@ decl_module! {
       ensure!(ipfs_hash != comment.ipfs_hash, MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER);
       ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
 
-      let mut new_edit_history = comment.clone().edit_history.unwrap_or(Vec::new());
-      new_edit_history.push(HistoryRecord {
-        created: Self::new_change(owner.clone()),
-        ipfs_hash: comment.ipfs_hash
-      });
-      comment.edit_history = Some(new_edit_history);
+      let new_history_record = CommentHistoryRecord {
+        edited: Self::new_change(owner.clone()),
+        old_data: CommentUpdate {ipfs_hash: comment.ipfs_hash}
+      };
+      comment.edit_history.push(new_history_record);
 
       comment.ipfs_hash = ipfs_hash;
       comment.updated = Some(Self::new_change(owner.clone()));
