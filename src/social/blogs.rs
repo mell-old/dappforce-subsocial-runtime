@@ -10,6 +10,8 @@ use {timestamp};
 pub const DEFAULT_SLUG_MAX_LEN: u32 = 50;
 pub const DEFAULT_SLUG_MIN_LEN: u32 = 5;
 
+pub const DEFAULT_IPFS_HASH_LEN: u32 = 46;
+
 pub const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
 pub const DEFAULT_POST_MAX_LEN: u32 = 10_000;
 pub const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
@@ -159,9 +161,9 @@ pub struct PostHistoryRecord<T: Trait> {
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Comment<T: Trait> {
   id: T::CommentId,
-  parent_id: Option<T::CommentId>,
-  post_id: T::PostId,
-  created: Change<T>,
+  pub parent_id: Option<T::CommentId>,
+  pub post_id: T::PostId,
+  pub created: Change<T>,
   updated: Option<Change<T>>,
 
   // Can be updated by the owner:
@@ -203,7 +205,7 @@ impl Default for ReactionKind {
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Reaction<T: Trait> {
   id: T::ReactionId,
-  created: Change<T>,
+  pub created: Change<T>,
   updated: Option<Change<T>>,
   pub kind: ReactionKind,
 }
@@ -221,6 +223,8 @@ decl_storage! {
 
     SlugMinLen get(slug_min_len): u32 = DEFAULT_SLUG_MIN_LEN;
     SlugMaxLen get(slug_max_len): u32 = DEFAULT_SLUG_MAX_LEN;
+
+    IpfsHashLen get(ipfs_hash_len): u32 = DEFAULT_IPFS_HASH_LEN;
 
     BlogMaxLen get(blog_max_len): u32 = DEFAULT_BLOG_MAX_LEN;
     PostMaxLen get(post_max_len): u32 = DEFAULT_POST_MAX_LEN;
@@ -315,7 +319,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_BLOG_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_BLOG_SLUG_IS_TOO_LONG);
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
-      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -424,7 +428,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
       ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -455,7 +459,7 @@ decl_module! {
       let owner = ensure_signed(origin)?;
 
       let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
 
       if let Some(id) = parent_id {
         ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
@@ -577,7 +581,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != blog.ipfs_hash {
-          ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
           new_history_record.old_data.ipfs_hash = Some(blog.ipfs_hash);
           blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
@@ -628,7 +632,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
-          ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
           new_history_record.old_data.ipfs_hash = Some(post.ipfs_hash);
           post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
@@ -668,7 +672,7 @@ decl_module! {
 
       let ipfs_hash = update.ipfs_hash;
       ensure!(ipfs_hash != comment.ipfs_hash, MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER);
-      ensure!(ipfs_hash.len() == 46, MSG_IPFS_IS_INCORRECT);
+      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
 
       let new_history_record = CommentHistoryRecord {
         edited: Self::new_change(owner.clone()),
