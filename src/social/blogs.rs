@@ -16,6 +16,10 @@ pub const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
 pub const DEFAULT_POST_MAX_LEN: u32 = 10_000;
 pub const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
 
+pub const DEFAULT_UPVOTE_ACTION_WEIGHT: u16 = 5;
+pub const DEFAULT_DOWNVOTE_ACTION_WEIGHT: u16 = 5;
+
+
 pub const MSG_BLOG_NOT_FOUND: &str = "Blog was not found by id";
 pub const MSG_BLOG_SLUG_IS_TOO_SHORT: &str = "Blog slug is too short";
 pub const MSG_BLOG_SLUG_IS_TOO_LONG: &str = "Blog slug is too long";
@@ -60,6 +64,9 @@ pub const MSG_FOLLOWER_ACCOUNT_NOT_FOUND: &str = "Follower social account was no
 pub const MSG_FOLLOWED_ACCOUNT_NOT_FOUND: &str = "Followed social account was not found by id";
 
 pub const MSG_IPFS_IS_INCORRECT: &str = "IPFS-hash is not correct";
+
+pub const MSG_ACCOUNT_HAS_ALREADY_SCORED_POST: &str = "Account has already scored this post";
+pub const MSG_ACCOUNT_HAS_ALREADY_SCORED_COMMENT: &str = "Account has already scored this comment";
 
 pub trait Trait: system::Trait + timestamp::Trait + MaybeDebug {
 
@@ -140,6 +147,8 @@ pub struct Post<T: Trait> {
   pub downvotes_count: u16,
 
   pub edit_history: Vec<PostHistoryRecord<T>>,
+
+  pub score: i32,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -173,6 +182,8 @@ pub struct Comment<T: Trait> {
   pub downvotes_count: u16,
 
   pub edit_history: Vec<CommentHistoryRecord<T>>,
+
+  pub score: i32,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -218,6 +229,26 @@ pub struct SocialAccount {
   following_blogs_count: u16,
 }
 
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
+#[derive(Clone, Copy, Encode, Decode, PartialEq, Eq)]
+pub enum ScoringAction {
+  Upvote,
+  Downvote,
+}
+
+impl Default for ScoringAction {
+  fn default() -> Self {
+    ScoringAction::Upvote
+  }
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct ScoreDiff {
+  pub subject_score_diff: i16,
+  pub author_rep_diff: i16,
+}
+
 decl_storage! {
   trait Store for Module<T: Trait> as Blogs {
 
@@ -229,6 +260,9 @@ decl_storage! {
     BlogMaxLen get(blog_max_len): u32 = DEFAULT_BLOG_MAX_LEN;
     PostMaxLen get(post_max_len): u32 = DEFAULT_POST_MAX_LEN;
     CommentMaxLen get(comment_max_len): u32 = DEFAULT_COMMENT_MAX_LEN;
+
+    UpvoteActionWeight get (upvote_action_weight): u16 = DEFAULT_UPVOTE_ACTION_WEIGHT;
+    DownvoteActionWeight get (downvote_action_weight): u16 = DEFAULT_DOWNVOTE_ACTION_WEIGHT;
 
     BlogById get(blog_by_id): map T::BlogId => Option<Blog<T>>;
     PostById get(post_by_id): map T::PostId => Option<Post<T>>;
@@ -260,6 +294,9 @@ decl_storage! {
     NextPostId get(next_post_id): T::PostId = T::PostId::sa(1);
     NextCommentId get(next_comment_id): T::CommentId = T::CommentId::sa(1);
     NextReactionId get(next_reaction_id): T::ReactionId = T::ReactionId::sa(1);
+
+    PostScoreByAccount get(post_score_by_account): map (T::AccountId, T::PostId, ScoringAction) => Option<ScoreDiff>;
+    CommentScoreByAccount get(comment_score_by_account): map (T::AccountId, T::CommentId, ScoringAction) => Option<ScoreDiff>;
   }
 }
 
@@ -284,10 +321,12 @@ decl_event! {
     PostCreated(AccountId, PostId),
     PostUpdated(AccountId, PostId),
     PostDeleted(AccountId, PostId),
+    PostScoreChanged(AccountId, PostId, ScoringAction),
 
     CommentCreated(AccountId, CommentId),
     CommentUpdated(AccountId, CommentId),
     CommentDeleted(AccountId, CommentId),
+    CommentScoreChanged(AccountId, CommentId, ScoringAction),
 
     PostReactionCreated(AccountId, PostId, ReactionId),
     PostReactionUpdated(AccountId, PostId, ReactionId),
@@ -442,6 +481,7 @@ decl_module! {
         upvotes_count: 0,
         downvotes_count: 0,
         edit_history: vec![],
+        score: 0,
       };
 
       <PostById<T>>::insert(post_id, new_post);
@@ -476,6 +516,7 @@ decl_module! {
         upvotes_count: 0,
         downvotes_count: 0,
         edit_history: vec![],
+        score: 0,
       };
 
       <CommentById<T>>::insert(comment_id, new_comment);
@@ -893,5 +934,52 @@ impl<T: Trait> Module<T> {
     if let Some(index) = vector.iter().position(|x| *x == element) {
       vector.swap_remove(index);
     }
+  }
+
+  pub fn change_post_score(account: T::AccountId, post_id: T::PostId, action: ScoringAction) -> dispatch::Result {
+    let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+    // let social_account = Self::social_account_by_id(account).ok_or(MSG_SOCIAL_ACCOUNT_NOT_FOUND)?;
+    ensure!(Self::post_score_by_account((account.clone(), post_id, action)).is_none(), MSG_ACCOUNT_HAS_ALREADY_SCORED_POST);
+
+    let mut score_diff = ScoreDiff {
+      subject_score_diff: 0,
+      author_rep_diff: 0
+    };
+    match action {
+        ScoringAction::Upvote => score_diff.subject_score_diff = Self::upvote_action_weight() as i16 * (10.0f32.ln().round() + 1.0f32) as i16,
+        ScoringAction::Downvote => score_diff.subject_score_diff = Self::downvote_action_weight() as i16 * (10.0f32.ln().round() + 1.0f32) as i16,
+    }
+
+    // TODO use author reputation
+
+    post.score += score_diff.subject_score_diff as i32;
+    <PostScoreByAccount<T>>::insert((account.clone(), post_id, action), score_diff);
+    <PostById<T>>::insert(post_id, post);
+
+    Self::deposit_event(RawEvent::PostScoreChanged(account, post_id, action));
+
+    Ok(())
+  }
+
+  pub fn change_comment_score(account: T::AccountId, comment_id: T::CommentId, action: ScoringAction) -> dispatch::Result {
+    let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+    ensure!(Self::comment_score_by_account((account.clone(), comment_id, action)).is_none(), MSG_ACCOUNT_HAS_ALREADY_SCORED_POST);
+
+    let mut score_diff = ScoreDiff {
+      subject_score_diff: 0,
+      author_rep_diff: 0
+    };
+    match action {
+        ScoringAction::Upvote => score_diff.subject_score_diff = Self::upvote_action_weight() as i16 * (10.0f32.ln().round() + 1.0f32) as i16,
+        ScoringAction::Downvote => score_diff.subject_score_diff = Self::downvote_action_weight() as i16 * (10.0f32.ln().round() + 1.0f32) as i16,
+    }
+
+    comment.score += score_diff.subject_score_diff as i32;
+    <CommentScoreByAccount<T>>::insert((account.clone(), comment_id, action), score_diff);
+    <CommentById<T>>::insert(comment_id, comment);
+
+    Self::deposit_event(RawEvent::CommentScoreChanged(account, comment_id, action));
+
+    Ok(())
   }
 }
