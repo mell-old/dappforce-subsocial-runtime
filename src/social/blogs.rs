@@ -1094,20 +1094,22 @@ impl<T: Trait> Module<T> {
   pub fn get_score_diff(reputation: u32, action: ScoringAction) -> i16 {
     let r = Self::log_2(reputation);
     let d = (reputation as i16 - (2 as i16).pow(r)) * 100 / (2 as i16).pow(r);
-    let mut score_diff = ((r as i16 + 1) * 100 + d) / 100;
-
-    match action {
-      ScoringAction::UpvotePost => score_diff *= Self::upvote_post_action_weight() as i16,
-      ScoringAction::DownvotePost => score_diff *= Self::downvote_post_action_weight() as i16,
-      ScoringAction::SharePost => score_diff *= Self::share_post_action_weight() as i16,
-      ScoringAction::UpvoteComment => score_diff *= Self::upvote_comment_action_weight() as i16,
-      ScoringAction::DownvoteComment => score_diff *= Self::downvote_comment_action_weight() as i16,
-      ScoringAction::ShareComment => score_diff *= Self::share_comment_action_weight() as i16,
-      ScoringAction::FollowBlog => score_diff *= Self::follow_blog_action_weight() as i16,
-      ScoringAction::FollowAccount => score_diff *= Self::follow_account_action_weight() as i16,
-    }
+    let score_diff = ((r as i16 + 1) * 100 + d) / 100 * Self::weight_of_scoring_action(action);
     
     score_diff
+  }
+
+  fn weight_of_scoring_action(action: ScoringAction) -> i16 {
+    match action {
+      ScoringAction::UpvotePost => Self::upvote_post_action_weight() as i16,
+      ScoringAction::DownvotePost => Self::downvote_post_action_weight() as i16,
+      ScoringAction::SharePost => Self::share_post_action_weight() as i16,
+      ScoringAction::UpvoteComment => Self::upvote_comment_action_weight() as i16,
+      ScoringAction::DownvoteComment => Self::downvote_comment_action_weight() as i16,
+      ScoringAction::ShareComment => Self::share_comment_action_weight() as i16,
+      ScoringAction::FollowBlog => Self::follow_blog_action_weight() as i16,
+      ScoringAction::FollowAccount => Self::follow_account_action_weight() as i16,
+    }
   }
 
   fn num_bits<P>() -> usize { rstd::mem::size_of::<P>() * 8 }
