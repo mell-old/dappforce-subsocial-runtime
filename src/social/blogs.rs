@@ -457,8 +457,7 @@ decl_module! {
       followed_account.followers_count = followed_account.followers_count
         .checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_ACCOUNT)?;
 
-      Self::change_social_account_reputation(follower.clone(),
-        account.clone(),
+      Self::change_social_account_reputation(account.clone(),
         Self::get_score_diff(follower_account.reputation.clone(), ScoringAction::FollowAccount),
         ScoringAction::FollowAccount
       )?;
@@ -1005,8 +1004,7 @@ impl<T: Trait> Module<T> {
 
     blog.followers_count = blog.followers_count.checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_BLOG)?;
     if blog.created.account != follower {
-      Self::change_social_account_reputation(follower.clone(),
-        blog.created.account.clone(),
+      Self::change_social_account_reputation(blog.created.account.clone(),
         Self::get_score_diff(social_account.reputation.clone(), ScoringAction::FollowBlog),
         ScoringAction::FollowBlog
       )?;
@@ -1049,11 +1047,11 @@ impl<T: Trait> Module<T> {
 
     if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
       post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
-      Self::change_social_account_reputation(account.clone(), post.created.account.clone(), score_diff * -1, action)?;
+      Self::change_social_account_reputation(post.created.account.clone(), score_diff * -1, action)?;
     } else {
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
-      Self::change_social_account_reputation(account.clone(), post.created.account.clone(), score_diff, action)?;
+      Self::change_social_account_reputation(post.created.account.clone(), score_diff, action)?;
       <PostScoreByAccount<T>>::insert((account, post_id, action), score_diff);
     }
     <PostById<T>>::insert(post_id, post.clone());
@@ -1067,11 +1065,11 @@ impl<T: Trait> Module<T> {
 
     if let Some(score_diff) = Self::comment_score_by_account((account.clone(), comment_id, action)) {
       comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(account.clone(), comment.created.account.clone(), score_diff * -1, action)?;
+      Self::change_social_account_reputation(comment.created.account.clone(), score_diff * -1, action)?;
     } else {
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       comment.score = comment.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(account.clone(), comment.created.account.clone(), score_diff, action)?;
+      Self::change_social_account_reputation(comment.created.account.clone(), score_diff, action)?;
       <CommentScoreByAccount<T>>::insert((account, comment_id, action), score_diff);
     }
     <CommentById<T>>::insert(comment_id, comment.clone());
@@ -1079,16 +1077,16 @@ impl<T: Trait> Module<T> {
     Ok(())
   }
 
-  fn change_social_account_reputation(account: T::AccountId, evaluated_account: T::AccountId, score_diff: i16, action: ScoringAction) -> dispatch::Result {
-    let mut social_account = Self::get_or_new_social_account(evaluated_account.clone());
+  fn change_social_account_reputation(account: T::AccountId, score_diff: i16, action: ScoringAction) -> dispatch::Result {
+    let mut social_account = Self::get_or_new_social_account(account.clone());
 
     if score_diff < 0 {
       social_account.reputation = social_account.reputation.checked_sub((score_diff * -1) as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
     } else {
       social_account.reputation = social_account.reputation.checked_add(score_diff as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
     }
-    <SocialAccountById<T>>::insert(evaluated_account.clone(), social_account.clone());
-    Self::deposit_event(RawEvent::AccountReputationChanged(evaluated_account, action, social_account.reputation));
+    <SocialAccountById<T>>::insert(account.clone(), social_account.clone());
+    Self::deposit_event(RawEvent::AccountReputationChanged(account, action, social_account.reputation));
 
     Ok(())
   }
