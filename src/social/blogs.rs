@@ -1114,7 +1114,7 @@ impl<T: Trait> Module<T> {
     Ok(())
   }
 
-  fn change_social_account_reputation(account: T::AccountId, scorer: T::AccountId, mut score_diff: i16, action: ScoringAction) -> dispatch::Result {
+  pub fn change_social_account_reputation(account: T::AccountId, scorer: T::AccountId, mut score_diff: i16, action: ScoringAction) -> dispatch::Result {
     let mut social_account = Self::get_or_new_social_account(account.clone());
 
     if social_account.reputation as i64 + score_diff as i64 <= 1 {
