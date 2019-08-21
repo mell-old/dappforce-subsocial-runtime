@@ -4,7 +4,6 @@ use parity_codec_derive::{Encode, Decode};
 use srml_support::{StorageMap, StorageValue, decl_module, decl_storage, decl_event, dispatch, ensure, Parameter};
 use runtime_primitives::traits::{SimpleArithmetic, As, Member, MaybeDebug, MaybeSerializeDebug};
 use system::{self, ensure_signed};
-use runtime_io::print;
 use {timestamp};
 
 pub const DEFAULT_SLUG_MAX_LEN: u32 = 50;
@@ -16,14 +15,14 @@ pub const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
 pub const DEFAULT_POST_MAX_LEN: u32 = 10_000;
 pub const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
 
-pub const DEFAULT_UPVOTE_POST_ACTION_WEIGHT: u16 = 5;
-pub const DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT: u16 = 3;
-pub const DEFAULT_SHARE_POST_ACTION_WEIGHT: u16 = 5;
-pub const DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT: u16 = 4;
-pub const DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT: u16 = 2;
-pub const DEFAULT_SHARE_COMMENT_ACTION_WEIGHT: u16 = 3;
-pub const DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT: u16 = 6;
-pub const DEFAULT_FOLLOW_ACCOUNT_ACTION_WEIGHT: u16 = 3;
+pub const DEFAULT_UPVOTE_POST_ACTION_WEIGHT: i16 = 5;
+pub const DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT: i16 = -3;
+pub const DEFAULT_SHARE_POST_ACTION_WEIGHT: i16 = 5;
+pub const DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT: i16 = 4;
+pub const DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT: i16 = -2;
+pub const DEFAULT_SHARE_COMMENT_ACTION_WEIGHT: i16 = 3;
+pub const DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT: i16 = 6;
+pub const DEFAULT_FOLLOW_ACCOUNT_ACTION_WEIGHT: i16 = 3;
 
 
 pub const MSG_BLOG_NOT_FOUND: &str = "Blog was not found by id";
@@ -71,9 +70,11 @@ pub const MSG_FOLLOWED_ACCOUNT_NOT_FOUND: &str = "Followed social account was no
 
 pub const MSG_IPFS_IS_INCORRECT: &str = "IPFS-hash is not correct";
 
-pub const MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE: &str = "Score out of bounds updating post score";
-pub const MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE: &str = "Score out of bounds updating comment score";
-pub const MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION: &str = "Score out of bounds updating social account reputation";
+pub const MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE: &str = "Out of bounds updating post score";
+pub const MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE: &str = "Out of bounds reverting post score";
+pub const MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE: &str = "Out of bounds updating comment score";
+pub const MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE: &str = "Out of bounds reverting comment score";
+pub const MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION: &str = "Out of bounds updating social account reputation";
 
 pub const MSG_ACCOUNT_ALREADY_SHARED_POST: &str = "Account has already shared this post";
 pub const MSG_POST_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this post";
@@ -277,14 +278,14 @@ decl_storage! {
     PostMaxLen get(post_max_len): u32 = DEFAULT_POST_MAX_LEN;
     CommentMaxLen get(comment_max_len): u32 = DEFAULT_COMMENT_MAX_LEN;
 
-    UpvotePostActionWeight get (upvote_post_action_weight): u16 = DEFAULT_UPVOTE_POST_ACTION_WEIGHT;
-    DownvotePostActionWeight get (downvote_post_action_weight): u16 = DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT;
-    SharePostActionWeight get (share_post_action_weight): u16 = DEFAULT_SHARE_POST_ACTION_WEIGHT;
-    UpvoteCommentActionWeight get (upvote_comment_action_weight): u16 = DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT;
-    DownvoteCommentActionWeight get (downvote_comment_action_weight): u16 = DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT;
-    ShareCommentActionWeight get (share_comment_action_weight): u16 = DEFAULT_SHARE_COMMENT_ACTION_WEIGHT;
-    FollowBlogActionWeight get (follow_blog_action_weight): u16 = DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT;
-    FollowAccountActionWeight get (follow_account_action_weight): u16 = DEFAULT_FOLLOW_ACCOUNT_ACTION_WEIGHT;
+    UpvotePostActionWeight get (upvote_post_action_weight): i16 = DEFAULT_UPVOTE_POST_ACTION_WEIGHT;
+    DownvotePostActionWeight get (downvote_post_action_weight): i16 = DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT;
+    SharePostActionWeight get (share_post_action_weight): i16 = DEFAULT_SHARE_POST_ACTION_WEIGHT;
+    UpvoteCommentActionWeight get (upvote_comment_action_weight): i16 = DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT;
+    DownvoteCommentActionWeight get (downvote_comment_action_weight): i16 = DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT;
+    ShareCommentActionWeight get (share_comment_action_weight): i16 = DEFAULT_SHARE_COMMENT_ACTION_WEIGHT;
+    FollowBlogActionWeight get (follow_blog_action_weight): i16 = DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT;
+    FollowAccountActionWeight get (follow_account_action_weight): i16 = DEFAULT_FOLLOW_ACCOUNT_ACTION_WEIGHT;
 
     BlogById get(blog_by_id): map T::BlogId => Option<Blog<T>>;
     PostById get(post_by_id): map T::PostId => Option<Post<T>>;
@@ -1042,13 +1043,29 @@ impl<T: Trait> Module<T> {
   }
 
   pub fn change_post_score(account: T::AccountId, post_id: T::PostId, action: ScoringAction) -> dispatch::Result {
-    let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+    let mut post : Post<T>;
     let social_account = Self::get_or_new_social_account(account.clone());
 
     if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
-      post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
+      post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE)?;
       Self::change_social_account_reputation(post.created.account.clone(), score_diff * -1, action)?;
+      <PostScoreByAccount<T>>::remove((account.clone(), post_id, action));
     } else {
+      match action {
+        ScoringAction::UpvotePost => {
+          if Self::post_score_by_account((account.clone(), post_id, ScoringAction::DownvotePost)).is_some() {
+            Self::change_post_score(account.clone(), post_id, ScoringAction::DownvotePost)?;
+          }
+        },
+        ScoringAction::DownvotePost => {
+          if Self::post_score_by_account((account.clone(), post_id, ScoringAction::UpvotePost)).is_some() {
+            Self::change_post_score(account.clone(), post_id, ScoringAction::UpvotePost)?;
+          }
+        },
+        _ => (),
+      }
+      post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
       Self::change_social_account_reputation(post.created.account.clone(), score_diff, action)?;
@@ -1064,8 +1081,9 @@ impl<T: Trait> Module<T> {
     let social_account = Self::get_or_new_social_account(account.clone());
 
     if let Some(score_diff) = Self::comment_score_by_account((account.clone(), comment_id, action)) {
-      comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
+      comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE)?;
       Self::change_social_account_reputation(comment.created.account.clone(), score_diff * -1, action)?;
+      <CommentScoreByAccount<T>>::remove((account.clone(), comment_id, action));
     } else {
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       comment.score = comment.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
@@ -1081,7 +1099,11 @@ impl<T: Trait> Module<T> {
     let mut social_account = Self::get_or_new_social_account(account.clone());
 
     if score_diff < 0 {
-      social_account.reputation = social_account.reputation.checked_sub((score_diff * -1) as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
+      if social_account.reputation as i64 + score_diff as i64 <= 1 {
+        social_account.reputation = 1;
+      } else {
+        social_account.reputation = social_account.reputation.checked_sub((score_diff * -1) as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
+      }
     } else {
       social_account.reputation = social_account.reputation.checked_add(score_diff as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
     }
@@ -1093,22 +1115,22 @@ impl<T: Trait> Module<T> {
 
   pub fn get_score_diff(reputation: u32, action: ScoringAction) -> i16 {
     let r = Self::log_2(reputation);
-    let d = (reputation as i16 - (2 as i16).pow(r)) * 100 / (2 as i16).pow(r);
-    let score_diff = ((r as i16 + 1) * 100 + d) / 100 * Self::weight_of_scoring_action(action);
+    let d = (reputation - (2 as u32).pow(r)) * 100 / (2 as u32).pow(r);
+    let score_diff = ((r as i16 + 1) * 100 + d as i16) / 100 * Self::weight_of_scoring_action(action);
     
     score_diff
   }
 
   fn weight_of_scoring_action(action: ScoringAction) -> i16 {
     match action {
-      ScoringAction::UpvotePost => Self::upvote_post_action_weight() as i16,
-      ScoringAction::DownvotePost => Self::downvote_post_action_weight() as i16,
-      ScoringAction::SharePost => Self::share_post_action_weight() as i16,
-      ScoringAction::UpvoteComment => Self::upvote_comment_action_weight() as i16,
-      ScoringAction::DownvoteComment => Self::downvote_comment_action_weight() as i16,
-      ScoringAction::ShareComment => Self::share_comment_action_weight() as i16,
-      ScoringAction::FollowBlog => Self::follow_blog_action_weight() as i16,
-      ScoringAction::FollowAccount => Self::follow_account_action_weight() as i16,
+      ScoringAction::UpvotePost => Self::upvote_post_action_weight(),
+      ScoringAction::DownvotePost => Self::downvote_post_action_weight(),
+      ScoringAction::SharePost => Self::share_post_action_weight(),
+      ScoringAction::UpvoteComment => Self::upvote_comment_action_weight(),
+      ScoringAction::DownvoteComment => Self::downvote_comment_action_weight(),
+      ScoringAction::ShareComment => Self::share_comment_action_weight(),
+      ScoringAction::FollowBlog => Self::follow_blog_action_weight(),
+      ScoringAction::FollowAccount => Self::follow_account_action_weight(),
     }
   }
 
