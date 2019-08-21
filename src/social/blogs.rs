@@ -75,6 +75,7 @@ pub const MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE: &str = "Out of bounds revertin
 pub const MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE: &str = "Out of bounds updating comment score";
 pub const MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE: &str = "Out of bounds reverting comment score";
 pub const MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION: &str = "Out of bounds updating social account reputation";
+pub const MSG_REPUTATION_DIFF_NOT_FOUND: &str = "Scored account reputation difference by account and action not found";
 
 pub const MSG_ACCOUNT_ALREADY_SHARED_POST: &str = "Account has already shared this post";
 pub const MSG_POST_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this post";
@@ -318,6 +319,7 @@ decl_storage! {
     NextCommentId get(next_comment_id): T::CommentId = T::CommentId::sa(1);
     NextReactionId get(next_reaction_id): T::ReactionId = T::ReactionId::sa(1);
 
+    AccountReputationDiffByAccount get(account_reputation_diff_by_account): map (T::AccountId, T::AccountId, ScoringAction) => Option<i16>; // TODO shorten name (?refactor)
     PostScoreByAccount get(post_score_by_account): map (T::AccountId, T::PostId, ScoringAction) => Option<i16>;
     CommentScoreByAccount get(comment_score_by_account): map (T::AccountId, T::CommentId, ScoringAction) => Option<i16>;
 
@@ -458,7 +460,7 @@ decl_module! {
       followed_account.followers_count = followed_account.followers_count
         .checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_ACCOUNT)?;
 
-      Self::change_social_account_reputation(account.clone(),
+      Self::change_social_account_reputation(account.clone(), follower.clone(),
         Self::get_score_diff(follower_account.reputation.clone(), ScoringAction::FollowAccount),
         ScoringAction::FollowAccount
       )?;
@@ -1005,7 +1007,7 @@ impl<T: Trait> Module<T> {
 
     blog.followers_count = blog.followers_count.checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_BLOG)?;
     if blog.created.account != follower {
-      Self::change_social_account_reputation(blog.created.account.clone(),
+      Self::change_social_account_reputation(blog.created.account.clone(), follower.clone(),
         Self::get_score_diff(social_account.reputation.clone(), ScoringAction::FollowBlog),
         ScoringAction::FollowBlog
       )?;
@@ -1043,13 +1045,13 @@ impl<T: Trait> Module<T> {
   }
 
   pub fn change_post_score(account: T::AccountId, post_id: T::PostId, action: ScoringAction) -> dispatch::Result {
-    let mut post : Post<T>;
+    let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
     let social_account = Self::get_or_new_social_account(account.clone());
 
     if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
-      post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), post.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
       post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE)?;
-      Self::change_social_account_reputation(post.created.account.clone(), score_diff * -1, action)?;
+      Self::change_social_account_reputation(post.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
       <PostScoreByAccount<T>>::remove((account.clone(), post_id, action));
     } else {
       match action {
@@ -1065,10 +1067,11 @@ impl<T: Trait> Module<T> {
         },
         _ => (),
       }
+      // Update temporary post variable after changes in Post
       post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
-      Self::change_social_account_reputation(post.created.account.clone(), score_diff, action)?;
+      Self::change_social_account_reputation(post.created.account.clone(), account.clone(), score_diff, action)?;
       <PostScoreByAccount<T>>::insert((account, post_id, action), score_diff);
     }
     <PostById<T>>::insert(post_id, post.clone());
@@ -1081,13 +1084,29 @@ impl<T: Trait> Module<T> {
     let social_account = Self::get_or_new_social_account(account.clone());
 
     if let Some(score_diff) = Self::comment_score_by_account((account.clone(), comment_id, action)) {
+      let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), comment.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
       comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(comment.created.account.clone(), score_diff * -1, action)?;
+      Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
       <CommentScoreByAccount<T>>::remove((account.clone(), comment_id, action));
     } else {
+      match action {
+        ScoringAction::UpvoteComment => {
+          if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::DownvoteComment)).is_some() {
+            Self::change_comment_score(account.clone(), comment_id, ScoringAction::DownvoteComment)?;
+          }
+        },
+        ScoringAction::DownvoteComment => {
+          if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::UpvoteComment)).is_some() {
+            Self::change_comment_score(account.clone(), comment_id, ScoringAction::UpvoteComment)?;
+          }
+        },
+        _ => (),
+      }
+      // Update temporary comment variable after changes in Comment
+      comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
       comment.score = comment.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(comment.created.account.clone(), score_diff, action)?;
+      Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), score_diff, action)?;
       <CommentScoreByAccount<T>>::insert((account, comment_id, action), score_diff);
     }
     <CommentById<T>>::insert(comment_id, comment.clone());
@@ -1095,19 +1114,25 @@ impl<T: Trait> Module<T> {
     Ok(())
   }
 
-  fn change_social_account_reputation(account: T::AccountId, score_diff: i16, action: ScoringAction) -> dispatch::Result {
+  fn change_social_account_reputation(account: T::AccountId, scorer: T::AccountId, mut score_diff: i16, action: ScoringAction) -> dispatch::Result {
     let mut social_account = Self::get_or_new_social_account(account.clone());
 
+    if social_account.reputation as i64 + score_diff as i64 <= 1 {
+      social_account.reputation = 1;
+      score_diff = 0;
+    }
     if score_diff < 0 {
-      if social_account.reputation as i64 + score_diff as i64 <= 1 {
-        social_account.reputation = 1;
-      } else {
-        social_account.reputation = social_account.reputation.checked_sub((score_diff * -1) as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
-      }
+      social_account.reputation = social_account.reputation.checked_sub((score_diff * -1) as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
     } else {
       social_account.reputation = social_account.reputation.checked_add(score_diff as u32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_ACCOUNT_REPUTATION)?;
     }
+
     <SocialAccountById<T>>::insert(account.clone(), social_account.clone());
+    if Self::account_reputation_diff_by_account((scorer.clone(), account.clone(), action)).is_some() {
+      <AccountReputationDiffByAccount<T>>::remove((scorer.clone(), account.clone(), action));
+    } else {
+      <AccountReputationDiffByAccount<T>>::insert((scorer.clone(), account.clone(), action), score_diff);
+    }
     Self::deposit_event(RawEvent::AccountReputationChanged(account, action, social_account.reputation));
 
     Ok(())
