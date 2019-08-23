@@ -354,12 +354,12 @@ decl_event! {
     PostCreated(AccountId, PostId),
     PostUpdated(AccountId, PostId),
     PostDeleted(AccountId, PostId),
-    SharePost(AccountId, PostId),
+    PostShared(AccountId, PostId),
 
     CommentCreated(AccountId, CommentId),
     CommentUpdated(AccountId, CommentId),
     CommentDeleted(AccountId, CommentId),
-    ShareComment(AccountId, CommentId),
+    CommentShared(AccountId, CommentId),
 
     PostReactionCreated(AccountId, PostId, ReactionId),
     PostReactionUpdated(AccountId, PostId, ReactionId),
@@ -562,6 +562,7 @@ decl_module! {
 
       <PostSharedByAccount<T>>::insert((owner.clone(), post_id), true);
       <AccountsThatSharedPost<T>>::mutate(post_id, |ids| ids.push(owner.clone()));
+      Self::deposit_event(RawEvent::PostShared(owner.clone(), post_id));
     }
 
     pub fn unshare_post(origin, post_id: T::PostId) {
@@ -619,6 +620,7 @@ decl_module! {
 
       <CommentSharedByAccount<T>>::insert((owner.clone(), comment_id), true);
       <AccountsThatSharedComment<T>>::mutate(comment_id, |ids| ids.push(owner.clone()));
+      Self::deposit_event(RawEvent::CommentShared(owner.clone(), comment_id));
     }
 
     pub fn unshare_comment(origin, comment_id: T::CommentId) {
