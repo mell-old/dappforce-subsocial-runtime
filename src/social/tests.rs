@@ -1212,3 +1212,84 @@ fn change_comment_score_should_fail_comment_not_found() {
     assert_noop!(Blogs::change_comment_score(ACCOUNT1, 2, self::scoring_action_upvote_comment()), MSG_COMMENT_NOT_FOUND);
   });
 }
+
+// Shares tests
+
+#[test]
+fn share_post_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+
+    assert_ok!(Blogs::share_post(Origin::signed(ACCOUNT1), 1));
+
+    assert_eq!(Blogs::post_shared_by_account((ACCOUNT1, 1)), true);
+    assert_eq!(Blogs::accounts_that_shared_post(1), vec![ACCOUNT1]);
+  });
+}
+
+#[test]
+fn share_post_should_fail_post_already_shared() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+
+    assert_ok!(Blogs::share_post(Origin::signed(ACCOUNT1), 1));
+    assert_noop!(Blogs::share_post(Origin::signed(ACCOUNT1), 1),
+      MSG_ACCOUNT_ALREADY_SHARED_POST
+    );
+  });
+}
+
+#[test]
+fn share_post_should_fail_post_not_found() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+
+    assert_noop!(Blogs::share_post(Origin::signed(ACCOUNT1), 2),
+      MSG_POST_NOT_FOUND
+    );
+  });
+}
+
+#[test]
+fn share_comment_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+
+    assert_ok!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1));
+
+    assert_eq!(Blogs::comment_shared_by_account((ACCOUNT1, 1)), true);
+    assert_eq!(Blogs::accounts_that_shared_comment(1), vec![ACCOUNT1]);
+  });
+}
+
+#[test]
+fn share_comment_should_fail_comment_already_shared() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+
+    assert_ok!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1));
+    assert_noop!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1),
+      MSG_ACCOUNT_ALREADY_SHARED_COMMENT
+    );
+  });
+}
+
+#[test]
+fn share_comment_should_fail_comment_not_found() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+
+    assert_noop!(Blogs::share_comment(Origin::signed(ACCOUNT1), 2),
+      MSG_COMMENT_NOT_FOUND
+    );
+  });
+}

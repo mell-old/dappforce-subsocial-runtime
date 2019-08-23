@@ -324,10 +324,10 @@ decl_storage! {
     CommentScoreByAccount get(comment_score_by_account): map (T::AccountId, T::CommentId, ScoringAction) => Option<i16>;
 
     PostSharedByAccount get(post_shared_by_account): map (T::AccountId, T::PostId) => bool;
-    AccountsThatSharedPost get(accounts_that_shared_posts): map T::PostId => Vec<T::AccountId>;
+    AccountsThatSharedPost get(accounts_that_shared_post): map T::PostId => Vec<T::AccountId>;
 
     CommentSharedByAccount get(comment_shared_by_account): map (T::AccountId, T::CommentId) => bool;
-    AccountsThatSharedComment get(accounts_that_shared_comments): map T::CommentId => Vec<T::AccountId>;
+    AccountsThatSharedComment get(accounts_that_shared_comment): map T::CommentId => Vec<T::AccountId>;
   }
 }
 
@@ -440,6 +440,17 @@ decl_module! {
         .ok_or(MSG_UNDERFLOW_UNFOLLOWING_BLOG)?;
       blog.followers_count = blog.followers_count.checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_BLOG)?;
 
+      if blog.created.account != follower {
+        let reputation_diff = Self::account_reputation_diff_by_account(
+          (follower.clone(), blog.created.account.clone(), ScoringAction::FollowBlog)
+        ).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
+
+        Self::change_social_account_reputation(blog.created.account.clone(), follower.clone(),
+          reputation_diff,
+          ScoringAction::FollowBlog
+        )?;
+      }
+
       <SocialAccountById<T>>::insert(follower.clone(), social_account);
       <BlogById<T>>::insert(blog_id, blog);
 
@@ -490,6 +501,14 @@ decl_module! {
         .checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT)?;
       followed_account.followers_count = followed_account.followers_count
         .checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT)?;
+
+      let reputation_diff = Self::account_reputation_diff_by_account(
+        (follower.clone(), account.clone(), ScoringAction::FollowAccount)
+      ).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
+      Self::change_social_account_reputation(account.clone(), follower.clone(),
+        reputation_diff,
+        ScoringAction::FollowAccount
+      )?;
 
       <SocialAccountById<T>>::insert(follower.clone(), follower_account);
       <SocialAccountById<T>>::insert(account.clone(), followed_account);
@@ -550,6 +569,8 @@ decl_module! {
 
       ensure!(Self::post_shared_by_account((owner.clone(), post_id)), MSG_POST_IS_NOT_SHARED_BY_ACCOUNT);
 
+      Self::change_post_score(owner.clone(), post_id, ScoringAction::SharePost)?;
+
       <PostSharedByAccount<T>>::remove((owner.clone(), post_id));
       <AccountsThatSharedPost<T>>::mutate(post_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
     }
@@ -604,6 +625,8 @@ decl_module! {
       let owner = ensure_signed(origin)?;
 
       ensure!(Self::comment_shared_by_account((owner.clone(), comment_id)), MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT);
+
+      Self::change_comment_score(owner.clone(), comment_id, ScoringAction::ShareComment)?;
 
       <CommentSharedByAccount<T>>::remove((owner.clone(), comment_id));
       <AccountsThatSharedComment<T>>::mutate(comment_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
@@ -1141,9 +1164,9 @@ impl<T: Trait> Module<T> {
   pub fn get_score_diff(reputation: u32, action: ScoringAction) -> i16 {
     let r = Self::log_2(reputation);
     let d = (reputation - (2 as u32).pow(r)) * 100 / (2 as u32).pow(r);
-    let score_diff = ((r as i16 + 1) * 100 + d as i16) / 100 * Self::weight_of_scoring_action(action);
+    let score_diff = ((r + 1) * 100 + d) / 100;
     
-    score_diff
+    score_diff as i16 * Self::weight_of_scoring_action(action)
   }
 
   fn weight_of_scoring_action(action: ScoringAction) -> i16 {
