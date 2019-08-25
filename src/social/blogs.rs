@@ -11,6 +11,9 @@ pub const DEFAULT_SLUG_MIN_LEN: u32 = 5;
 
 pub const DEFAULT_IPFS_HASH_LEN: u32 = 46;
 
+pub const DEFAULT_USERNAME_MAX_LEN: u32 = 24;
+pub const DEFAULT_USERNAME_MIN_LEN: u32 = 3;
+
 pub const DEFAULT_BLOG_MAX_LEN: u32 = 1_000;
 pub const DEFAULT_POST_MAX_LEN: u32 = 10_000;
 pub const DEFAULT_COMMENT_MAX_LEN: u32 = 1_000;
@@ -81,6 +84,14 @@ pub const MSG_ACCOUNT_ALREADY_SHARED_POST: &str = "Account has already shared th
 pub const MSG_POST_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this post";
 pub const MSG_ACCOUNT_ALREADY_SHARED_COMMENT: &str = "Account has already shared this comment";
 pub const MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this comment";
+
+pub const MSG_PROFILE_ALREADY_EXISTS: &str = "Profile for this account already exists";
+pub const MSG_NOTHING_TO_UPDATE_IN_PROFILE: &str = "Nothing to update in a profile";
+pub const MSG_PROFILE_NOT_FOUND: &str = "Profile for this account is not created yet";
+pub const MSG_USERNAME_IS_BUSY: &str = "Profile username is busy";
+pub const MSG_USERNAME_TOO_SHORT: &str = "Username is too short";
+pub const MSG_USERNAME_TOO_LONG: &str = "Username is too long";
+pub const MSG_USERNAME_NOT_ALPHANUMERIC: &str = "Username is not alphanumeric";
 
 pub trait Trait: system::Trait + timestamp::Trait + MaybeDebug {
 
@@ -241,11 +252,28 @@ pub struct Reaction<T: Trait> {
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
-pub struct SocialAccount {
+pub struct SocialAccount<T: Trait> {
   followers_count: u32,
   following_accounts_count: u16,
   following_blogs_count: u16,
   pub reputation: u32,
+  profile: Option<Profile<T>>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct Profile<T: Trait> {
+  created: Change<T>,
+  updated: Option<Change<T>>,
+  username: Vec<u8>,
+  ipfs_hash: Vec<u8>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct ProfileUpdate {
+  username: Option<Vec<u8>>,
+  ipfs_hash: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -275,6 +303,9 @@ decl_storage! {
 
     IpfsHashLen get(ipfs_hash_len): u32 = DEFAULT_IPFS_HASH_LEN;
 
+    UsernameMinLen get(username_min_len): u32 = DEFAULT_USERNAME_MIN_LEN;
+    UsernameMaxLen get(username_max_len): u32 = DEFAULT_USERNAME_MAX_LEN;
+
     BlogMaxLen get(blog_max_len): u32 = DEFAULT_BLOG_MAX_LEN;
     PostMaxLen get(post_max_len): u32 = DEFAULT_POST_MAX_LEN;
     CommentMaxLen get(comment_max_len): u32 = DEFAULT_COMMENT_MAX_LEN;
@@ -292,7 +323,7 @@ decl_storage! {
     PostById get(post_by_id): map T::PostId => Option<Post<T>>;
     CommentById get(comment_by_id): map T::CommentId => Option<Comment<T>>;
     ReactionById get(reaction_by_id): map T::ReactionId => Option<Reaction<T>>;
-    SocialAccountById get(social_account_by_id): map T::AccountId => Option<SocialAccount>;
+    SocialAccountById get(social_account_by_id): map T::AccountId => Option<SocialAccount<T>>;
 
     BlogIdsByOwner get(blog_ids_by_owner): map T::AccountId => Vec<T::BlogId>;
     PostIdsByBlogId get(post_ids_by_blog_id): map T::BlogId => Vec<T::PostId>;
@@ -328,6 +359,8 @@ decl_storage! {
 
     CommentSharedByAccount get(comment_shared_by_account): map (T::AccountId, T::CommentId) => bool;
     AccountsThatSharedComment get(accounts_that_shared_comment): map T::CommentId => Vec<T::AccountId>;
+
+    AccountByProfileUsername get(account_by_profile_username): map Vec<u8> => Option<T::AccountId>;
   }
 }
 
@@ -368,6 +401,9 @@ decl_event! {
     CommentReactionCreated(AccountId, CommentId, ReactionId),
     CommentReactionUpdated(AccountId, CommentId, ReactionId),
     CommentReactionDeleted(AccountId, CommentId, ReactionId),
+
+    ProfileCreated(AccountId),
+    ProfileUpdated(AccountId),
   }
 }
 
@@ -700,6 +736,65 @@ decl_module! {
       <CommentById<T>>::insert(comment_id, comment);
 
       Self::deposit_event(RawEvent::CommentReactionCreated(owner.clone(), comment_id, reaction_id));
+    }
+
+    pub fn create_profile(origin, username: Vec<u8>, ipfs_hash: Vec<u8>) {
+      let owner = ensure_signed(origin)?;
+
+      let mut social_account = Self::get_or_new_social_account(owner.clone());
+      ensure!(social_account.profile.is_none(), MSG_PROFILE_ALREADY_EXISTS);
+      Self::is_username_valid(username.clone())?;
+      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+
+      social_account.profile = Some(
+        Profile {
+          created: Self::new_change(owner.clone()),
+          updated: None,
+          username: username.clone(),
+          ipfs_hash
+        }
+      );
+      <AccountByProfileUsername<T>>::insert(username.clone(), owner.clone());
+      <SocialAccountById<T>>::insert(owner.clone(), social_account.clone());
+      Self::deposit_event(RawEvent::ProfileCreated(owner.clone()));
+    }
+
+    pub fn update_profile(origin, update: ProfileUpdate) {
+      let owner = ensure_signed(origin)?;
+
+      let has_updates =
+        update.username.is_some() ||
+        update.ipfs_hash.is_some();
+      ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_PROFILE);
+
+      let mut social_account = Self::social_account_by_id(owner.clone()).ok_or(MSG_SOCIAL_ACCOUNT_NOT_FOUND)?;
+      let mut profile = social_account.profile.ok_or(MSG_PROFILE_NOT_FOUND)?;
+      let mut is_update_applied = false;
+
+      if let Some(ipfs_hash) = update.ipfs_hash {
+        if ipfs_hash != profile.ipfs_hash {
+          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+          profile.ipfs_hash = ipfs_hash;
+          is_update_applied = true;
+        }
+      }
+
+      if let Some(username) = update.username {
+        if username != profile.username {
+          Self::is_username_valid(username.clone())?;
+          <AccountByProfileUsername<T>>::remove(profile.username.clone());
+          <AccountByProfileUsername<T>>::insert(username.clone(), owner.clone());
+          profile.username = username;
+          is_update_applied = true;
+        }
+      }
+
+      if is_update_applied {
+        profile.updated = Some(Self::new_change(owner.clone()));
+        social_account.profile = Some(profile);
+        <SocialAccountById<T>>::insert(owner.clone(), social_account);
+        Self::deposit_event(RawEvent::ProfileUpdated(owner.clone()));
+      }
     }
 
     pub fn update_blog(origin, blog_id: T::BlogId, update: BlogUpdate<T>) {
@@ -1050,7 +1145,7 @@ impl<T: Trait> Module<T> {
     Ok(())
   }
 
-  fn get_or_new_social_account(account: T::AccountId) -> SocialAccount {
+  fn get_or_new_social_account(account: T::AccountId) -> SocialAccount<T> {
     if let Some(social_account) = Self::social_account_by_id(account) {
       social_account
     } else {
@@ -1058,7 +1153,8 @@ impl<T: Trait> Module<T> {
         followers_count: 0,
         following_accounts_count: 0,
         following_blogs_count: 0,
-        reputation: 1
+        reputation: 1,
+        profile: None
       }
     }
   }
@@ -1189,5 +1285,14 @@ impl<T: Trait> Module<T> {
   pub fn log_2(x: u32) -> u32 {
     assert!(x > 0);
     Self::num_bits::<u32>() as u32 - x.leading_zeros() - 1
+  }
+
+  fn is_username_valid(username: Vec<u8>) -> dispatch::Result {
+    ensure!(Self::account_by_profile_username(username.clone()).is_none(), MSG_USERNAME_IS_BUSY);
+    ensure!(username.len() > Self::username_min_len() as usize, MSG_USERNAME_TOO_SHORT);
+    ensure!(username.len() < Self::username_max_len() as usize, MSG_USERNAME_TOO_LONG);
+    ensure!(username.iter().all(|&x| x.is_ascii_alphanumeric()), MSG_USERNAME_NOT_ALPHANUMERIC);
+
+    Ok(())
   }
 }
