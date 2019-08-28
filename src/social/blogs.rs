@@ -265,8 +265,11 @@ pub struct SocialAccount<T: Trait> {
 pub struct Profile<T: Trait> {
   created: Change<T>,
   updated: Option<Change<T>>,
+
   username: Vec<u8>,
   ipfs_hash: Vec<u8>,
+  
+  edit_history: Vec<ProfileHistoryRecord<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -274,6 +277,13 @@ pub struct Profile<T: Trait> {
 pub struct ProfileUpdate {
   username: Option<Vec<u8>>,
   ipfs_hash: Option<Vec<u8>>,
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Clone, Encode, Decode, PartialEq)]
+pub struct ProfileHistoryRecord<T: Trait> {
+  edited: Change<T>,
+  old_data: ProfileUpdate,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -751,7 +761,8 @@ decl_module! {
           created: Self::new_change(owner.clone()),
           updated: None,
           username: username.clone(),
-          ipfs_hash
+          ipfs_hash,
+          edit_history: vec![]
         }
       );
       <AccountByProfileUsername<T>>::insert(username.clone(), owner.clone());
@@ -770,10 +781,15 @@ decl_module! {
       let mut social_account = Self::social_account_by_id(owner.clone()).ok_or(MSG_SOCIAL_ACCOUNT_NOT_FOUND)?;
       let mut profile = social_account.profile.ok_or(MSG_PROFILE_NOT_FOUND)?;
       let mut is_update_applied = false;
+      let mut new_history_record = ProfileHistoryRecord {
+        edited: Self::new_change(owner.clone()),
+        old_data: ProfileUpdate {username: None, ipfs_hash: None}
+      };
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != profile.ipfs_hash {
           ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+          new_history_record.old_data.ipfs_hash = Some(profile.ipfs_hash);
           profile.ipfs_hash = ipfs_hash;
           is_update_applied = true;
         }
@@ -784,6 +800,7 @@ decl_module! {
           Self::is_username_valid(username.clone())?;
           <AccountByProfileUsername<T>>::remove(profile.username.clone());
           <AccountByProfileUsername<T>>::insert(username.clone(), owner.clone());
+          new_history_record.old_data.username = Some(profile.username);
           profile.username = username;
           is_update_applied = true;
         }
@@ -791,6 +808,7 @@ decl_module! {
 
       if is_update_applied {
         profile.updated = Some(Self::new_change(owner.clone()));
+        profile.edit_history.push(new_history_record);
         social_account.profile = Some(profile);
         <SocialAccountById<T>>::insert(owner.clone(), social_account);
         Self::deposit_event(RawEvent::ProfileUpdated(owner.clone()));
