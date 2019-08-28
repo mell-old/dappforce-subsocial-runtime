@@ -55,6 +55,25 @@ fn comment_update(ipfs_hash: Vec<u8>) -> CommentUpdate {
   }
 }
 
+fn alice_username() -> Vec<u8> {
+  b"Alice".to_vec()
+}
+
+fn bob_username() -> Vec<u8> {
+  b"Bob".to_vec()
+}
+
+fn profile_ipfs_hash() -> Vec<u8> {
+  b"QmRAQB6YaCyidP37UdDnjFY5vQuiaRtqdyoW2CuDgwxkA5".to_vec()
+}
+
+// fn profile_update(username: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> ProfileUpdate {
+//   ProfileUpdate {
+//     username,
+//     ipfs_hash
+//   }
+// }
+
 fn reaction_upvote() -> ReactionKind {
   ReactionKind::Upvote
 }
@@ -176,7 +195,7 @@ fn _create_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, kin
 
 fn _update_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_id: u32, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::update_post_reaction(
-    origin.unwrap_or(Origin::signed(1)),
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
     reaction_id,
     kind.unwrap_or(self::reaction_upvote())
@@ -185,7 +204,7 @@ fn _update_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_
 
 fn _update_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, reaction_id: u32, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::update_comment_reaction(
-    origin.unwrap_or(Origin::signed(1)),
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
     reaction_id,
     kind.unwrap_or(self::reaction_upvote())
@@ -194,7 +213,7 @@ fn _update_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, rea
 
 fn _delete_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_id: u32) -> dispatch::Result {
   Blogs::delete_post_reaction(
-    origin.unwrap_or(Origin::signed(1)),
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
     reaction_id
   )
@@ -202,9 +221,31 @@ fn _delete_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_
 
 fn _delete_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, reaction_id: u32) -> dispatch::Result {
   Blogs::delete_comment_reaction(
-    origin.unwrap_or(Origin::signed(1)),
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
     reaction_id
+  )
+}
+
+fn _create_default_profile() -> dispatch::Result {
+  _create_profile(None, None, None)
+}
+
+fn _create_profile(origin: Option<Origin>, username: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
+  Blogs::create_profile(
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
+    username.unwrap_or(self::alice_username()),
+    ipfs_hash.unwrap_or(self::profile_ipfs_hash())
+  )
+}
+
+fn _update_profile(origin: Option<Origin>, username: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
+  Blogs::update_profile(
+    origin.unwrap_or(Origin::signed(ACCOUNT1)),
+    ProfileUpdate {
+      username,
+      ipfs_hash
+    }
   )
 }
 
@@ -264,7 +305,7 @@ fn create_blog_should_fail_not_unique_slug() {
 
 #[test]
 fn create_blog_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     // Try to catch an error creating a blog with invalid ipfs_hash
@@ -274,8 +315,8 @@ fn create_blog_should_fail_invalid_ipfs_hash() {
 
 #[test]
 fn update_blog_should_work() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
-  let ipfs_hash : Vec<u8> = String::from("QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW2CuDgwxkD4").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
+  let ipfs_hash : Vec<u8> = b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW2CuDgwxkD4".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -315,7 +356,7 @@ fn update_blog_should_fail_nothing_to_update() {
 
 #[test]
 fn update_blog_should_fail_blog_not_found() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -335,7 +376,7 @@ fn update_blog_should_fail_blog_not_found() {
 
 #[test]
 fn update_blog_should_fail_not_an_owner() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -395,7 +436,7 @@ fn update_blog_should_fail_long_slug() {
 
 #[test]
 fn update_blog_should_fail_not_unique_slug() {
-  let slug : Vec<u8> = String::from("unique_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"unique_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -421,7 +462,7 @@ fn update_blog_should_fail_not_unique_slug() {
 
 #[test]
 fn update_blog_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -503,7 +544,7 @@ fn create_post_should_fail_not_unique_slug() {
 
 #[test]
 fn create_post_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -515,8 +556,8 @@ fn create_post_should_fail_invalid_ipfs_hash() {
 
 #[test]
 fn update_post_should_work() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
-  let ipfs_hash : Vec<u8> = String::from("QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
+  let ipfs_hash : Vec<u8> = b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -560,7 +601,7 @@ fn update_post_should_fail_nothing_to_update() {
 
 #[test]
 fn update_post_should_fail_post_not_found() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -581,7 +622,7 @@ fn update_post_should_fail_post_not_found() {
 
 #[test]
 fn update_post_should_fail_not_an_owner() {
-  let slug : Vec<u8> = String::from("new_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"new_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -644,7 +685,7 @@ fn update_post_should_fail_long_slug() {
 
 #[test]
 fn update_post_should_fail_not_unique_slug() {
-  let slug : Vec<u8> = String::from("unique_slug").as_bytes().to_vec();
+  let slug : Vec<u8> = b"unique_slug".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -672,7 +713,7 @@ fn update_post_should_fail_not_unique_slug() {
 
 #[test]
 fn update_post_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -738,7 +779,7 @@ fn create_comment_should_fail_parent_not_found() {
 
 #[test]
 fn create_comment_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -804,7 +845,7 @@ fn update_comment_should_fail_not_an_owner() {
 
 #[test]
 fn update_comment_should_fail_invalid_ipfs_hash() {
-  let ipfs_hash : Vec<u8> = String::from("QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j").as_bytes().to_vec();
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -1291,5 +1332,170 @@ fn share_comment_should_fail_comment_not_found() {
     assert_noop!(Blogs::share_comment(Origin::signed(ACCOUNT1), 2),
       MSG_COMMENT_NOT_FOUND
     );
+  });
+}
+
+// Profiles tests
+
+#[test]
+fn create_profile_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+
+    let profile = Blogs::social_account_by_id(ACCOUNT1).unwrap().profile.unwrap();
+    assert_eq!(profile.created.account, ACCOUNT1);
+    assert_eq!(profile.updated, None);
+    assert_eq!(profile.username, self::alice_username());
+    assert_eq!(profile.ipfs_hash, self::profile_ipfs_hash());
+    assert!(profile.edit_history.is_empty());
+    assert_eq!(Blogs::account_by_profile_username(self::alice_username()), Some(ACCOUNT1));
+  });
+}
+
+#[test]
+fn create_profile_should_fail_profile_exists() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_create_default_profile(), MSG_PROFILE_ALREADY_EXISTS);
+  });
+}
+
+#[test]
+fn create_profile_should_fail_invalid_ipfs_hash() {
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
+
+  with_externalities(&mut build_ext(), || {
+    assert_noop!(_create_profile(None, None, Some(ipfs_hash)), MSG_IPFS_IS_INCORRECT);
+  });
+}
+
+#[test]
+fn create_profile_should_fail_username_is_busy() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_create_profile(Some(Origin::signed(ACCOUNT2)), None, None), MSG_USERNAME_IS_BUSY);
+  });
+}
+
+#[test]
+fn create_profile_should_fail_too_short_username() {
+  let username : Vec<u8> = vec![97; (DEFAULT_USERNAME_MIN_LEN - 1) as usize];
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_create_profile(Some(Origin::signed(ACCOUNT2)), Some(username), None), MSG_USERNAME_TOO_SHORT);
+  });
+}
+
+#[test]
+fn create_profile_should_fail_too_long_username() {
+  let username : Vec<u8> = vec![97; (DEFAULT_USERNAME_MAX_LEN + 1) as usize];
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_create_profile(Some(Origin::signed(ACCOUNT2)), Some(username), None), MSG_USERNAME_TOO_LONG);
+  });
+}
+
+#[test]
+fn create_profile_should_fail_invalid_username() {
+  let username : Vec<u8> = b"{}sername".to_vec();
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_create_profile(Some(Origin::signed(ACCOUNT2)), Some(username), None), MSG_USERNAME_NOT_ALPHANUMERIC);
+  });
+}
+
+#[test]
+fn update_profile_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_ok!(_update_profile(None, Some(self::bob_username()), Some(self::blog_ipfs_hash())));
+
+    // Check whether profile updated correctly
+    let profile = Blogs::social_account_by_id(ACCOUNT1).unwrap().profile.unwrap();
+    assert!(profile.updated.is_some());
+    assert_eq!(profile.username, self::bob_username());
+    assert_eq!(profile.ipfs_hash, self::blog_ipfs_hash());
+
+    // Check storages
+    assert_eq!(Blogs::account_by_profile_username(self::alice_username()), None);
+    assert_eq!(Blogs::account_by_profile_username(self::bob_username()), Some(ACCOUNT1));
+
+    // Check whether profile history is written correctly
+    assert_eq!(profile.edit_history[0].old_data.username, Some(self::alice_username()));
+    assert_eq!(profile.edit_history[0].old_data.ipfs_hash, Some(self::profile_ipfs_hash()));
+  });
+}
+
+#[test]
+fn update_profile_should_fail_no_social_account() {
+  with_externalities(&mut build_ext(), || {
+    assert_noop!(_update_profile(None, Some(self::bob_username()), None), MSG_PROFILE_DOESNT_EXIST);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_no_profile() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(Blogs::follow_account(Origin::signed(ACCOUNT1), ACCOUNT2));
+    assert_noop!(_update_profile(None, Some(self::bob_username()), None), MSG_PROFILE_DOESNT_EXIST);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_nothing_to_update() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_update_profile(None, None, None), MSG_NOTHING_TO_UPDATE_IN_PROFILE);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_username_is_busy() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_ok!(_create_profile(Some(Origin::signed(ACCOUNT2)), Some(self::bob_username()), None));
+    assert_noop!(_update_profile(None, Some(self::bob_username()), None), MSG_USERNAME_IS_BUSY);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_too_short_username() {
+  let username : Vec<u8> = vec![97; (DEFAULT_USERNAME_MIN_LEN - 1) as usize];
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_update_profile(None, Some(username), None), MSG_USERNAME_TOO_SHORT);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_too_long_username() {
+  let username : Vec<u8> = vec![97; (DEFAULT_USERNAME_MAX_LEN + 1) as usize];
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_update_profile(None, Some(username), None), MSG_USERNAME_TOO_LONG);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_invalid_username() {
+  let username : Vec<u8> = b"{}sername".to_vec();
+
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile()); // AccountId 1
+    assert_noop!(_update_profile(None, Some(username), None), MSG_USERNAME_NOT_ALPHANUMERIC);
+  });
+}
+
+#[test]
+fn update_profile_should_fail_invalid_ipfs_hash() {
+  let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
+
+  with_externalities(&mut build_ext(), || {
+    assert_noop!(_update_profile(None, None, Some(ipfs_hash)), MSG_IPFS_IS_INCORRECT);
   });
 }

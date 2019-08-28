@@ -87,7 +87,7 @@ pub const MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unsh
 
 pub const MSG_PROFILE_ALREADY_EXISTS: &str = "Profile for this account already exists";
 pub const MSG_NOTHING_TO_UPDATE_IN_PROFILE: &str = "Nothing to update in a profile";
-pub const MSG_PROFILE_NOT_FOUND: &str = "Profile for this account is not created yet";
+pub const MSG_PROFILE_DOESNT_EXIST: &str = "Account has no profile yet";
 pub const MSG_USERNAME_IS_BUSY: &str = "Profile username is busy";
 pub const MSG_USERNAME_TOO_SHORT: &str = "Username is too short";
 pub const MSG_USERNAME_TOO_LONG: &str = "Username is too long";
@@ -257,33 +257,33 @@ pub struct SocialAccount<T: Trait> {
   following_accounts_count: u16,
   following_blogs_count: u16,
   pub reputation: u32,
-  profile: Option<Profile<T>>,
+  pub profile: Option<Profile<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct Profile<T: Trait> {
-  created: Change<T>,
-  updated: Option<Change<T>>,
+  pub created: Change<T>,
+  pub updated: Option<Change<T>>,
 
-  username: Vec<u8>,
-  ipfs_hash: Vec<u8>,
+  pub username: Vec<u8>,
+  pub ipfs_hash: Vec<u8>,
   
-  edit_history: Vec<ProfileHistoryRecord<T>>,
+  pub edit_history: Vec<ProfileHistoryRecord<T>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct ProfileUpdate {
-  username: Option<Vec<u8>>,
-  ipfs_hash: Option<Vec<u8>>,
+  pub username: Option<Vec<u8>>,
+  pub ipfs_hash: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct ProfileHistoryRecord<T: Trait> {
   edited: Change<T>,
-  old_data: ProfileUpdate,
+  pub old_data: ProfileUpdate,
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
@@ -437,7 +437,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_BLOG_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_BLOG_SLUG_IS_TOO_LONG);
       ensure!(!<BlogIdBySlug<T>>::exists(slug.clone()), MSG_BLOG_SLUG_IS_NOT_UNIQUE);
-      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+      Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       let blog_id = Self::next_blog_id();
       let new_blog: Blog<T> = Blog {
@@ -503,7 +503,7 @@ decl_module! {
       Self::deposit_event(RawEvent::BlogUnfollowed(follower.clone(), blog_id));
     }
 
-    fn follow_account(origin, account: T::AccountId) {
+    pub fn follow_account(origin, account: T::AccountId) {
       let follower = ensure_signed(origin)?;
 
       ensure!(follower != account, MSG_ACCOUNT_CANNOT_FOLLOW_ITSELF);
@@ -571,7 +571,7 @@ decl_module! {
       ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
       ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
       ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+      Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
@@ -627,7 +627,7 @@ decl_module! {
       let owner = ensure_signed(origin)?;
 
       let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+      Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       if let Some(id) = parent_id {
         ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
@@ -754,7 +754,7 @@ decl_module! {
       let mut social_account = Self::get_or_new_social_account(owner.clone());
       ensure!(social_account.profile.is_none(), MSG_PROFILE_ALREADY_EXISTS);
       Self::is_username_valid(username.clone())?;
-      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+      Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       social_account.profile = Some(
         Profile {
@@ -776,10 +776,11 @@ decl_module! {
       let has_updates =
         update.username.is_some() ||
         update.ipfs_hash.is_some();
+      
       ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_PROFILE);
 
       let mut social_account = Self::social_account_by_id(owner.clone()).ok_or(MSG_SOCIAL_ACCOUNT_NOT_FOUND)?;
-      let mut profile = social_account.profile.ok_or(MSG_PROFILE_NOT_FOUND)?;
+      let mut profile = social_account.profile.ok_or(MSG_PROFILE_DOESNT_EXIST)?;
       let mut is_update_applied = false;
       let mut new_history_record = ProfileHistoryRecord {
         edited: Self::new_change(owner.clone()),
@@ -788,7 +789,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != profile.ipfs_hash {
-          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+          Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
           new_history_record.old_data.ipfs_hash = Some(profile.ipfs_hash);
           profile.ipfs_hash = ipfs_hash;
           is_update_applied = true;
@@ -861,7 +862,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != blog.ipfs_hash {
-          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+          Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
           new_history_record.old_data.ipfs_hash = Some(blog.ipfs_hash);
           blog.ipfs_hash = ipfs_hash;
           fields_updated += 1;
@@ -912,7 +913,7 @@ decl_module! {
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
-          ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+          Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
           new_history_record.old_data.ipfs_hash = Some(post.ipfs_hash);
           post.ipfs_hash = ipfs_hash;
           fields_updated += 1;
@@ -952,7 +953,7 @@ decl_module! {
 
       let ipfs_hash = update.ipfs_hash;
       ensure!(ipfs_hash != comment.ipfs_hash, MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER);
-      ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+      Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       let new_history_record = CommentHistoryRecord {
         edited: Self::new_change(owner.clone()),
@@ -1307,9 +1308,15 @@ impl<T: Trait> Module<T> {
 
   fn is_username_valid(username: Vec<u8>) -> dispatch::Result {
     ensure!(Self::account_by_profile_username(username.clone()).is_none(), MSG_USERNAME_IS_BUSY);
-    ensure!(username.len() > Self::username_min_len() as usize, MSG_USERNAME_TOO_SHORT);
-    ensure!(username.len() < Self::username_max_len() as usize, MSG_USERNAME_TOO_LONG);
+    ensure!(username.len() >= Self::username_min_len() as usize, MSG_USERNAME_TOO_SHORT);
+    ensure!(username.len() <= Self::username_max_len() as usize, MSG_USERNAME_TOO_LONG);
     ensure!(username.iter().all(|&x| x.is_ascii_alphanumeric()), MSG_USERNAME_NOT_ALPHANUMERIC);
+
+    Ok(())
+  }
+
+  fn is_ipfs_hash_valid(ipfs_hash: Vec<u8>) -> dispatch::Result {
+    ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
 
     Ok(())
   }
