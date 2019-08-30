@@ -1432,7 +1432,7 @@ fn update_profile_should_work() {
 #[test]
 fn update_profile_should_fail_no_social_account() {
   with_externalities(&mut build_ext(), || {
-    assert_noop!(_update_profile(None, Some(self::bob_username()), None), MSG_PROFILE_DOESNT_EXIST);
+    assert_noop!(_update_profile(None, Some(self::bob_username()), None), MSG_SOCIAL_ACCOUNT_NOT_FOUND);
   });
 }
 
@@ -1496,6 +1496,7 @@ fn update_profile_should_fail_invalid_ipfs_hash() {
   let ipfs_hash : Vec<u8> = b"QmV9tSDx9UiPeWExXEeH6aoDvmihvx6j".to_vec();
 
   with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_profile());
     assert_noop!(_update_profile(None, None, Some(ipfs_hash)), MSG_IPFS_IS_INCORRECT);
   });
 }
