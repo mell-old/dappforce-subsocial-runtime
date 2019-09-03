@@ -242,6 +242,14 @@ fn _update_profile(origin: Option<Origin>, username: Option<Vec<u8>>, ipfs_hash:
   )
 }
 
+fn _change_blog_score_by_id(account: AccountId, blog_id: BlogId, action: ScoringAction) -> dispatch::Result {
+  if let Some(ref mut blog) = Blogs::blog_by_id(blog_id) {
+    Blogs::change_blog_score(account, blog, action)
+  } else {
+    Err(MSG_BLOG_NOT_FOUND)
+  }
+}
+
 fn _change_post_score_by_id(account: AccountId, post_id: PostId, action: ScoringAction) -> dispatch::Result {
   if let Some(ref mut post) = Blogs::post_by_id(post_id) {
     Blogs::change_post_score(account, post, action)
@@ -1067,6 +1075,59 @@ fn random_score_diff_check_result() {
     assert_eq!(Blogs::get_score_diff(65536, self::scoring_action_upvote_post()), 85); // 2^16
   });
 }
+
+//--------------------------------------------------------------------------------------------------
+
+#[test]
+fn change_blog_score_should_work_follow_blog() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), None, None)); // BlogId 1 by ACCOUNT2
+    assert_ok!(Blogs::follow_blog(Origin::signed(ACCOUNT1), 1));
+    assert_eq!(Blogs::blog_by_id(1).unwrap().score, DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1 + DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT as u32);
+    assert_eq!(Blogs::blog_score_by_account((ACCOUNT1, 1, self::scoring_action_follow_blog())), Some(DEFAULT_FOLLOW_BLOG_ACTION_WEIGHT));
+  });
+}
+
+#[test]
+fn change_blog_score_should_work_revert_follow_blog() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), None, None)); // BlogId 1 by ACCOUNT2
+    assert_ok!(Blogs::follow_blog(Origin::signed(ACCOUNT1), 1));
+    assert_ok!(Blogs::unfollow_blog(Origin::signed(ACCOUNT1), 1));
+    assert_eq!(Blogs::blog_by_id(1).unwrap().score, 0);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
+    assert_eq!(Blogs::blog_score_by_account((ACCOUNT1, 1, self::scoring_action_follow_blog())), None);
+  });
+}
+
+#[test]
+fn change_blog_score_should_work_upvote_post() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), None, None)); // BlogId 1 by ACCOUNT2
+    assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None)); // PostId 1 on BlogId 1 by ACCOUNT2
+    assert_ok!(_create_default_post_reaction()); // ReactionId 1 of kind 'Upvote' on PostId 1
+    assert_eq!(Blogs::blog_by_id(1).unwrap().score, DEFAULT_UPVOTE_POST_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, DEFAULT_UPVOTE_POST_ACTION_WEIGHT as u32);
+    assert_eq!(Blogs::blog_score_by_account((ACCOUNT1, 1, self::scoring_action_upvote_post())), Some(DEFAULT_UPVOTE_POST_ACTION_WEIGHT));
+  });
+}
+
+#[test]
+fn change_blog_score_should_work_downvote_post() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), None, None)); // BlogId 1 by ACCOUNT2
+    assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None)); // PostId 1 on BlogId 1 by ACCOUNT2
+    assert_ok!(_create_post_reaction(None, None, Some(self::reaction_downvote()))); // ReactionId 1 of kind 'Upvote' on PostId 1
+    assert_eq!(Blogs::blog_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
+    assert_eq!(Blogs::blog_score_by_account((ACCOUNT1, 1, self::scoring_action_downvote_post())), Some(DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT));
+  });
+}
+
+//--------------------------------------------------------------------------------------------------
 
 #[test]
 fn change_post_score_should_work_upvote() {
