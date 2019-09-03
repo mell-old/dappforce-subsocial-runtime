@@ -604,7 +604,8 @@ decl_module! {
 
       ensure!(!Self::post_shared_by_account((owner.clone(), post_id)), MSG_ACCOUNT_ALREADY_SHARED_POST);
 
-      Self::change_post_score(owner.clone(), post_id, ScoringAction::SharePost)?;
+      let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      Self::change_post_score(owner.clone(), post, ScoringAction::SharePost)?;
 
       <PostSharedByAccount<T>>::insert((owner.clone(), post_id), true);
       <AccountsThatSharedPost<T>>::mutate(post_id, |ids| ids.push(owner.clone()));
@@ -616,7 +617,8 @@ decl_module! {
 
       ensure!(Self::post_shared_by_account((owner.clone(), post_id)), MSG_POST_IS_NOT_SHARED_BY_ACCOUNT);
 
-      Self::change_post_score(owner.clone(), post_id, ScoringAction::SharePost)?;
+      let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      Self::change_post_score(owner.clone(), post, ScoringAction::SharePost)?;
 
       <PostSharedByAccount<T>>::remove((owner.clone(), post_id));
       <AccountsThatSharedPost<T>>::mutate(post_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
@@ -662,7 +664,8 @@ decl_module! {
 
       ensure!(!Self::comment_shared_by_account((owner.clone(), comment_id)), MSG_ACCOUNT_ALREADY_SHARED_COMMENT);
 
-      Self::change_comment_score(owner.clone(), comment_id, ScoringAction::ShareComment)?;
+      let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+      Self::change_comment_score(owner.clone(), comment, ScoringAction::ShareComment)?;
 
       <CommentSharedByAccount<T>>::insert((owner.clone(), comment_id), true);
       <AccountsThatSharedComment<T>>::mutate(comment_id, |ids| ids.push(owner.clone()));
@@ -674,7 +677,8 @@ decl_module! {
 
       ensure!(Self::comment_shared_by_account((owner.clone(), comment_id)), MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT);
 
-      Self::change_comment_score(owner.clone(), comment_id, ScoringAction::ShareComment)?;
+      let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+      Self::change_comment_score(owner.clone(), comment, ScoringAction::ShareComment)?;
 
       <CommentSharedByAccount<T>>::remove((owner.clone(), comment_id));
       <AccountsThatSharedComment<T>>::mutate(comment_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
@@ -688,28 +692,31 @@ decl_module! {
         MSG_ACCOUNT_ALREADY_REACTED_TO_POST
       );
 
-      let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       let reaction_id = Self::new_reaction(owner.clone(), kind.clone());
 
       <ReactionIdsByPostId<T>>::mutate(post_id, |ids| ids.push(reaction_id));
       <PostReactionIdByAccount<T>>::insert((owner.clone(), post_id), reaction_id);
 
+      let action: ScoringAction;
       match kind {
         ReactionKind::Upvote => {
           post.upvotes_count += 1;
-          if post.created.account != owner {
-            Self::change_post_score(owner.clone(), post_id, ScoringAction::UpvotePost)?;
-          }
+          action = ScoringAction::UpvotePost;
         },
         ReactionKind::Downvote => {
           post.downvotes_count += 1;
-          if post.created.account != owner {
-            Self::change_post_score(owner.clone(), post_id, ScoringAction::DownvotePost)?;
-          }
+          action = ScoringAction::DownvotePost;
         },
       }
-      // TODO maybe use mutate instead of insert?
-      <PostById<T>>::insert(post_id, post);
+
+      if post.created.account != owner {
+        Self::change_post_score(owner.clone(), post, action)?;
+      }
+      else {
+        // TODO maybe use mutate instead of insert?
+        <PostById<T>>::insert(post_id, post);
+      }
 
       Self::deposit_event(RawEvent::PostReactionCreated(owner.clone(), post_id, reaction_id));
     }
@@ -722,28 +729,30 @@ decl_module! {
         MSG_ACCOUNT_ALREADY_REACTED_TO_COMMENT
       );
 
-      let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+      let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
       let reaction_id = Self::new_reaction(owner.clone(), kind.clone());
 
       <ReactionIdsByCommentId<T>>::mutate(comment_id, |ids| ids.push(reaction_id));
       <CommentReactionIdByAccount<T>>::insert((owner.clone(), comment_id), reaction_id);
 
+      let action: ScoringAction;
       match kind {
         ReactionKind::Upvote => {
           comment.upvotes_count += 1;
-          if comment.created.account != owner {
-            Self::change_comment_score(owner.clone(), comment_id, ScoringAction::UpvoteComment)?;
-          }
+          action = ScoringAction::UpvoteComment;
         },
         ReactionKind::Downvote => {
           comment.downvotes_count += 1;
-          if comment.created.account != owner {
-            Self::change_comment_score(owner.clone(), comment_id, ScoringAction::DownvoteComment)?;
-          }
+          action = ScoringAction::DownvoteComment;
         },
       }
-      // TODO maybe use mutate instead of insert?
-      <CommentById<T>>::insert(comment_id, comment);
+      if comment.created.account != owner {
+        Self::change_comment_score(owner.clone(), comment, action)?;
+      }
+      else {
+        // TODO maybe use mutate instead of insert?
+        <CommentById<T>>::insert(comment_id, comment);
+      }
 
       Self::deposit_event(RawEvent::CommentReactionCreated(owner.clone(), comment_id, reaction_id));
     }
@@ -1184,72 +1193,72 @@ impl<T: Trait> Module<T> {
     }
   }
 
-  pub fn change_post_score(account: T::AccountId, post_id: T::PostId, action: ScoringAction) -> dispatch::Result {
-    let mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+  pub fn change_post_score(account: T::AccountId, post: &mut Post<T>, action: ScoringAction) -> dispatch::Result {
     let social_account = Self::get_or_new_social_account(account.clone());
-
-    if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
-      let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), post.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
-      post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE)?;
-      Self::change_social_account_reputation(post.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
-      <PostScoreByAccount<T>>::remove((account.clone(), post_id, action));
-    } else {
-      match action {
-        ScoringAction::UpvotePost => {
-          if Self::post_score_by_account((account.clone(), post_id, ScoringAction::DownvotePost)).is_some() {
-            Self::change_post_score(account.clone(), post_id, ScoringAction::DownvotePost)?;
-          }
-        },
-        ScoringAction::DownvotePost => {
-          if Self::post_score_by_account((account.clone(), post_id, ScoringAction::UpvotePost)).is_some() {
-            Self::change_post_score(account.clone(), post_id, ScoringAction::UpvotePost)?;
-          }
-        },
-        _ => (),
+    let post_id = post.id;
+    
+    if post.created.account != account {
+      if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
+        let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), post.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
+        post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE)?;
+        Self::change_social_account_reputation(post.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
+        <PostScoreByAccount<T>>::remove((account.clone(), post_id, action));
+      } else {
+        match action {
+          ScoringAction::UpvotePost => {
+            if Self::post_score_by_account((account.clone(), post_id, ScoringAction::DownvotePost)).is_some() {
+              Self::change_post_score(account.clone(), post, ScoringAction::DownvotePost)?;
+            }
+          },
+          ScoringAction::DownvotePost => {
+            if Self::post_score_by_account((account.clone(), post_id, ScoringAction::UpvotePost)).is_some() {
+              Self::change_post_score(account.clone(), post, ScoringAction::UpvotePost)?;
+            }
+          },
+          _ => (),
+        }
+        let score_diff = Self::get_score_diff(social_account.reputation, action);
+        post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
+        Self::change_social_account_reputation(post.created.account.clone(), account.clone(), score_diff, action)?;
+        <PostScoreByAccount<T>>::insert((account, post_id, action), score_diff);
       }
-      // Update temporary post variable after changes in Post
-      post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-      let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
-      post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
-      Self::change_social_account_reputation(post.created.account.clone(), account.clone(), score_diff, action)?;
-      <PostScoreByAccount<T>>::insert((account, post_id, action), score_diff);
+      <PostById<T>>::insert(post_id, post.clone());
     }
-    <PostById<T>>::insert(post_id, post.clone());
 
     Ok(())
   }
 
-  pub fn change_comment_score(account: T::AccountId, comment_id: T::CommentId, action: ScoringAction) -> dispatch::Result {
-    let mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+  pub fn change_comment_score(account: T::AccountId, comment: &mut Comment<T>, action: ScoringAction) -> dispatch::Result {
     let social_account = Self::get_or_new_social_account(account.clone());
+    let comment_id = comment.id;
 
-    if let Some(score_diff) = Self::comment_score_by_account((account.clone(), comment_id, action)) {
-      let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), comment.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
-      comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
-      <CommentScoreByAccount<T>>::remove((account.clone(), comment_id, action));
-    } else {
-      match action {
-        ScoringAction::UpvoteComment => {
-          if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::DownvoteComment)).is_some() {
-            Self::change_comment_score(account.clone(), comment_id, ScoringAction::DownvoteComment)?;
-          }
-        },
-        ScoringAction::DownvoteComment => {
-          if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::UpvoteComment)).is_some() {
-            Self::change_comment_score(account.clone(), comment_id, ScoringAction::UpvoteComment)?;
-          }
-        },
-        _ => (),
+    if comment.created.account != account {
+      if let Some(score_diff) = Self::comment_score_by_account((account.clone(), comment_id, action)) {
+        let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), comment.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
+        comment.score = comment.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_COMMENT_SCORE)?;
+        Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
+        <CommentScoreByAccount<T>>::remove((account.clone(), comment_id, action));
+      } else {
+        match action {
+          ScoringAction::UpvoteComment => {
+            if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::DownvoteComment)).is_some() {
+              Self::change_comment_score(account.clone(), comment, ScoringAction::DownvoteComment)?;
+            }
+          },
+          ScoringAction::DownvoteComment => {
+            if Self::comment_score_by_account((account.clone(), comment_id, ScoringAction::UpvoteComment)).is_some() {
+              Self::change_comment_score(account.clone(), comment, ScoringAction::UpvoteComment)?;
+            }
+          },
+          _ => (),
+        }
+        let score_diff = Self::get_score_diff(social_account.reputation, action);
+        comment.score = comment.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
+        Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), score_diff, action)?;
+        <CommentScoreByAccount<T>>::insert((account, comment_id, action), score_diff);
       }
-      // Update temporary comment variable after changes in Comment
-      comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
-      let score_diff : i16 = Self::get_score_diff(social_account.reputation, action);
-      comment.score = comment.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_COMMENT_SCORE)?;
-      Self::change_social_account_reputation(comment.created.account.clone(), account.clone(), score_diff, action)?;
-      <CommentScoreByAccount<T>>::insert((account, comment_id, action), score_diff);
+      <CommentById<T>>::insert(comment_id, comment.clone());
     }
-    <CommentById<T>>::insert(comment_id, comment.clone());
 
     Ok(())
   }

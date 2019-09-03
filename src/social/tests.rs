@@ -6,8 +6,8 @@ use super::blogs::*;
 use runtime_io::with_externalities;
 use srml_support::*;
 
-const ACCOUNT1 : u64 = 1;
-const ACCOUNT2 : u64 = 2;
+const ACCOUNT1 : AccountId = 1;
+const ACCOUNT2 : AccountId = 2;
 
 fn blog_slug() -> Vec<u8> {
   b"blog_slug".to_vec()
@@ -17,7 +17,7 @@ fn blog_ipfs_hash() -> Vec<u8> {
   b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4".to_vec()
 }
 
-fn blog_update(writers: Option<Vec<u64>>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> BlogUpdate<Test> {
+fn blog_update(writers: Option<Vec<AccountId>>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> BlogUpdate<Test> {
   BlogUpdate {
     writers,
     slug,
@@ -33,7 +33,7 @@ fn post_ipfs_hash() -> Vec<u8> {
   b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW2CuDgwxkD4".to_vec()
 }
 
-fn post_update(blog_id: Option<u32>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> PostUpdate<Test> {
+fn post_update(blog_id: Option<BlogId>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> PostUpdate<Test> {
   PostUpdate {
     blog_id,
     slug,
@@ -67,20 +67,13 @@ fn profile_ipfs_hash() -> Vec<u8> {
   b"QmRAQB6YaCyidP37UdDnjFY5vQuiaRtqdyoW2CuDgwxkA5".to_vec()
 }
 
-// fn profile_update(username: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> ProfileUpdate {
-//   ProfileUpdate {
-//     username,
-//     ipfs_hash
-//   }
-// }
-
 fn reaction_upvote() -> ReactionKind {
   ReactionKind::Upvote
 }
 
-// fn reaction_downvote() -> ReactionKind {
-//   ReactionKind::Downvote
-// }
+fn reaction_downvote() -> ReactionKind {
+  ReactionKind::Downvote
+}
 
 fn scoring_action_upvote_post() -> ScoringAction {
   ScoringAction::UpvotePost
@@ -131,7 +124,7 @@ fn _create_default_post() -> dispatch::Result {
   _create_post(None, None, None, None)
 }
 
-fn _create_post(origin: Option<Origin>, blog_id: Option<u32>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
+fn _create_post(origin: Option<Origin>, blog_id: Option<BlogId>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
   Blogs::create_post(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     blog_id.unwrap_or(1),
@@ -140,7 +133,7 @@ fn _create_post(origin: Option<Origin>, blog_id: Option<u32>, slug: Option<Vec<u
   )
 }
 
-fn _update_post(origin: Option<Origin>, post_id: Option<u32>, update: Option<PostUpdate<Test>>) -> dispatch::Result {
+fn _update_post(origin: Option<Origin>, post_id: Option<PostId>, update: Option<PostUpdate<Test>>) -> dispatch::Result {
   Blogs::update_post(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -152,7 +145,7 @@ fn _create_default_comment() -> dispatch::Result {
   _create_comment(None, None, None, None)
 }
 
-fn _create_comment(origin: Option<Origin>, post_id: Option<u32>, parent_id: Option<u32>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
+fn _create_comment(origin: Option<Origin>, post_id: Option<PostId>, parent_id: Option<CommentId>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
   Blogs::create_comment(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -161,7 +154,7 @@ fn _create_comment(origin: Option<Origin>, post_id: Option<u32>, parent_id: Opti
   )
 }
 
-fn _update_comment(origin: Option<Origin>, comment_id: Option<u32>, update: Option<CommentUpdate>) -> dispatch::Result {
+fn _update_comment(origin: Option<Origin>, comment_id: Option<CommentId>, update: Option<CommentUpdate>) -> dispatch::Result {
   Blogs::update_comment(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
@@ -177,7 +170,7 @@ fn _create_default_comment_reaction() -> dispatch::Result {
   _create_comment_reaction(None, None, None)
 }
 
-fn _create_post_reaction(origin: Option<Origin>, post_id: Option<u32>, kind: Option<ReactionKind>) -> dispatch::Result {
+fn _create_post_reaction(origin: Option<Origin>, post_id: Option<PostId>, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::create_post_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -185,7 +178,7 @@ fn _create_post_reaction(origin: Option<Origin>, post_id: Option<u32>, kind: Opt
   )
 }
 
-fn _create_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, kind: Option<ReactionKind>) -> dispatch::Result {
+fn _create_comment_reaction(origin: Option<Origin>, comment_id: Option<CommentId>, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::create_comment_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
@@ -193,7 +186,7 @@ fn _create_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, kin
   )
 }
 
-fn _update_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_id: u32, kind: Option<ReactionKind>) -> dispatch::Result {
+fn _update_post_reaction(origin: Option<Origin>, post_id: Option<PostId>, reaction_id: ReactionId, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::update_post_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -202,7 +195,7 @@ fn _update_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_
   )
 }
 
-fn _update_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, reaction_id: u32, kind: Option<ReactionKind>) -> dispatch::Result {
+fn _update_comment_reaction(origin: Option<Origin>, comment_id: Option<CommentId>, reaction_id: ReactionId, kind: Option<ReactionKind>) -> dispatch::Result {
   Blogs::update_comment_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
@@ -211,7 +204,7 @@ fn _update_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, rea
   )
 }
 
-fn _delete_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_id: u32) -> dispatch::Result {
+fn _delete_post_reaction(origin: Option<Origin>, post_id: Option<PostId>, reaction_id: ReactionId) -> dispatch::Result {
   Blogs::delete_post_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
@@ -219,7 +212,7 @@ fn _delete_post_reaction(origin: Option<Origin>, post_id: Option<u32>, reaction_
   )
 }
 
-fn _delete_comment_reaction(origin: Option<Origin>, comment_id: Option<u32>, reaction_id: u32) -> dispatch::Result {
+fn _delete_comment_reaction(origin: Option<Origin>, comment_id: Option<CommentId>, reaction_id: ReactionId) -> dispatch::Result {
   Blogs::delete_comment_reaction(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     comment_id.unwrap_or(1),
@@ -247,6 +240,22 @@ fn _update_profile(origin: Option<Origin>, username: Option<Vec<u8>>, ipfs_hash:
       ipfs_hash
     }
   )
+}
+
+fn _change_post_score_by_id(account: AccountId, post_id: PostId, action: ScoringAction) -> dispatch::Result {
+  if let Some(ref mut post) = Blogs::post_by_id(post_id) {
+    Blogs::change_post_score(account, post, action)
+  } else {
+    Err(MSG_POST_NOT_FOUND)
+  }
+}
+
+fn _change_comment_score_by_id(account: AccountId, comment_id: CommentId, action: ScoringAction) -> dispatch::Result {
+  if let Some(ref mut comment) = Blogs::comment_by_id(comment_id) {
+    Blogs::change_comment_score(account, comment, action)
+  } else {
+    Err(MSG_COMMENT_NOT_FOUND)
+  }
 }
 
 // Blog tests
@@ -394,45 +403,47 @@ fn update_blog_should_fail_not_an_owner() {
   });
 }
 
-#[test]
-fn update_blog_should_fail_short_slug() {
-  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
+// TODO uncomment when slug validation implemented:
+// #[test]
+// fn update_blog_should_fail_short_slug() {
+//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
 
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
+//   with_externalities(&mut build_ext(), || {
+//     assert_ok!(_create_default_blog()); // BlogId 1
   
-    // Try to catch an error updating a blog with too short slug
-    assert_noop!(_update_blog(None, None,
-      Some(
-        self::blog_update(
-          None, 
-          Some(slug),
-          None
-        )
-      )
-    ), MSG_BLOG_SLUG_IS_TOO_SHORT);
-  });
-}
+//     // Try to catch an error updating a blog with too short slug
+//     assert_noop!(_update_blog(None, None,
+//       Some(
+//         self::blog_update(
+//           None, 
+//           Some(slug),
+//           None
+//         )
+//       )
+//     ), MSG_BLOG_SLUG_IS_TOO_SHORT);
+//   });
+// }
 
-#[test]
-fn update_blog_should_fail_long_slug() {
-  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
+// TODO uncomment when slug validation implemented:
+// #[test]
+// fn update_blog_should_fail_long_slug() {
+//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
 
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
+//   with_externalities(&mut build_ext(), || {
+//     assert_ok!(_create_default_blog()); // BlogId 1
   
-    // Try to catch an error updating a blog with too long slug
-    assert_noop!(_update_blog(None, None,
-      Some(
-        self::blog_update(
-          None, 
-          Some(slug),
-          None
-        )
-      )
-    ), MSG_BLOG_SLUG_IS_TOO_LONG);
-  });
-}
+//     // Try to catch an error updating a blog with too long slug
+//     assert_noop!(_update_blog(None, None,
+//       Some(
+//         self::blog_update(
+//           None, 
+//           Some(slug),
+//           None
+//         )
+//       )
+//     ), MSG_BLOG_SLUG_IS_TOO_LONG);
+//   });
+// }
 
 #[test]
 fn update_blog_should_fail_not_unique_slug() {
@@ -641,47 +652,49 @@ fn update_post_should_fail_not_an_owner() {
   });
 }
 
-#[test]
-fn update_post_should_fail_short_slug() {
-  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
+// TODO uncomment when slug validation implemented:
+// #[test]
+// fn update_post_should_fail_short_slug() {
+//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
 
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
+//   with_externalities(&mut build_ext(), || {
+//     assert_ok!(_create_default_blog()); // BlogId 1
+//     assert_ok!(_create_default_post()); // PostId 1
   
-    // Try to catch an error updating a post with too short slug
-    assert_noop!(_update_post(None, None,
-      Some(
-        self::post_update(
-          None, 
-          Some(slug),
-          None
-        )
-      )
-    ), MSG_POST_SLUG_IS_TOO_SHORT);
-  });
-}
+//     // Try to catch an error updating a post with too short slug
+//     assert_noop!(_update_post(None, None,
+//       Some(
+//         self::post_update(
+//           None, 
+//           Some(slug),
+//           None
+//         )
+//       )
+//     ), MSG_POST_SLUG_IS_TOO_SHORT);
+//   });
+// }
 
-#[test]
-fn update_post_should_fail_long_slug() {
-  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
+// TODO uncomment when slug validation implemented:
+// #[test]
+// fn update_post_should_fail_long_slug() {
+//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
 
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
+//   with_externalities(&mut build_ext(), || {
+//     assert_ok!(_create_default_blog()); // BlogId 1
+//     assert_ok!(_create_default_post()); // PostId 1
   
-    // Try to catch an error updating a post with too long slug
-    assert_noop!(_update_post(None, None,
-      Some(
-        self::post_update(
-          None, 
-          Some(slug),
-          None
-        )
-      )
-    ), MSG_POST_SLUG_IS_TOO_LONG);
-  });
-}
+//     // Try to catch an error updating a post with too long slug
+//     assert_noop!(_update_post(None, None,
+//       Some(
+//         self::post_update(
+//           None, 
+//           Some(slug),
+//           None
+//         )
+//       )
+//     ), MSG_POST_SLUG_IS_TOO_LONG);
+//   });
+// }
 
 #[test]
 fn update_post_should_fail_not_unique_slug() {
@@ -881,12 +894,12 @@ fn update_comment_should_fail_ipfs_hash_dont_differ() {
 
 // Reaction tests
 #[test]
-fn create_post_reaction_should_work() {
+fn create_post_reaction_should_work_upvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
     assert_ok!(_create_default_post()); // PostId 1
 
-    assert_ok!(_create_default_post_reaction()); // ReactionId 1
+    assert_ok!(_create_post_reaction(Some(Origin::signed(ACCOUNT2)), None, None)); // ReactionId 1 by ACCOUNT2
 
     // Check storages
     assert_eq!(Blogs::reaction_ids_by_post_id(1), vec![1]);
@@ -897,10 +910,40 @@ fn create_post_reaction_should_work() {
     assert_eq!(post.upvotes_count, 1);
     assert_eq!(post.downvotes_count, 0);
 
+    // Post score should change after upvoting
+    assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_UPVOTE_POST_ACTION_WEIGHT as i32);
+
     // Check whether data stored correctly
     let reaction = Blogs::reaction_by_id(1).unwrap();
-    assert_eq!(reaction.created.account, ACCOUNT1);
+    assert_eq!(reaction.created.account, ACCOUNT2);
     assert_eq!(reaction.kind, self::reaction_upvote());
+  });
+}
+
+#[test]
+fn create_post_reaction_should_work_downvote() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+
+    assert_ok!(_create_post_reaction(Some(Origin::signed(ACCOUNT2)), None, Some(self::reaction_downvote()))); // ReactionId 1 by ACCOUNT2
+
+    // Check storages
+    assert_eq!(Blogs::reaction_ids_by_post_id(1), vec![1]);
+    assert_eq!(Blogs::next_reaction_id(), 2);
+
+    // Check post reaction counters
+    let post = Blogs::post_by_id(1).unwrap();
+    assert_eq!(post.upvotes_count, 0);
+    assert_eq!(post.downvotes_count, 1);
+
+    // Post score should change after upvoting
+    assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT as i32);
+
+    // Check whether data stored correctly
+    let reaction = Blogs::reaction_by_id(1).unwrap();
+    assert_eq!(reaction.created.account, ACCOUNT2);
+    assert_eq!(reaction.kind, self::reaction_downvote());
   });
 }
 
@@ -925,12 +968,12 @@ fn create_post_reaction_should_fail_post_not_found() {
 }
 
 #[test]
-fn create_comment_reaction_should_work() {
+fn create_comment_reaction_should_work_upvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
     assert_ok!(_create_default_post()); // PostId 1
     assert_ok!(_create_default_comment()); // CommentId 1
-    assert_ok!(_create_default_comment_reaction()); // ReactionId 1
+    assert_ok!(_create_comment_reaction(Some(Origin::signed(ACCOUNT2)), None, None)); // ReactionId 1 by ACCOUNT2
 
     // Check storages
     assert_eq!(Blogs::reaction_ids_by_comment_id(1), vec![1]);
@@ -941,10 +984,40 @@ fn create_comment_reaction_should_work() {
     assert_eq!(comment.upvotes_count, 1);
     assert_eq!(comment.downvotes_count, 0);
 
+    // Post score should change after upvoting
+    assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as i32);
+
     // Check whether data stored correctly
     let reaction = Blogs::reaction_by_id(1).unwrap();
-    assert_eq!(reaction.created.account, ACCOUNT1);
+    assert_eq!(reaction.created.account, ACCOUNT2);
     assert_eq!(reaction.kind, self::reaction_upvote());
+  });
+}
+
+#[test]
+fn create_comment_reaction_should_work_downvote() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+    assert_ok!(_create_comment_reaction(Some(Origin::signed(ACCOUNT2)), None, Some(self::reaction_downvote()))); // ReactionId 1 by ACCOUNT2
+
+    // Check storages
+    assert_eq!(Blogs::reaction_ids_by_comment_id(1), vec![1]);
+    assert_eq!(Blogs::next_reaction_id(), 2);
+
+    // Check comment reaction counters
+    let comment = Blogs::comment_by_id(1).unwrap();
+    assert_eq!(comment.upvotes_count, 0);
+    assert_eq!(comment.downvotes_count, 1);
+
+    // Post score should change after upvoting
+    assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT as i32);
+
+    // Check whether data stored correctly
+    let reaction = Blogs::reaction_by_id(1).unwrap();
+    assert_eq!(reaction.created.account, ACCOUNT2);
+    assert_eq!(reaction.kind, self::reaction_downvote());
   });
 }
 
@@ -1000,7 +1073,7 @@ fn change_post_score_should_work_upvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_upvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_UPVOTE_POST_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1 + DEFAULT_UPVOTE_POST_ACTION_WEIGHT as u32);
@@ -1013,7 +1086,7 @@ fn change_post_score_should_work_downvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_downvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1026,8 +1099,8 @@ fn change_post_score_should_revert_upvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_upvote_post()));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_upvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, 0);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1040,8 +1113,8 @@ fn change_post_score_should_revert_downvote() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_downvote_post()));
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_downvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, 0);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1055,9 +1128,9 @@ fn change_post_score_check_cancel_upvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
 
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_upvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_post()));
 
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_downvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1072,9 +1145,9 @@ fn change_post_score_check_cancel_downvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
 
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_downvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_post()));
 
-    assert_ok!(Blogs::change_post_score(ACCOUNT1, 1, self::scoring_action_upvote_post()));
+    assert_ok!(_change_post_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_post()));
     assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_UPVOTE_POST_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1 + DEFAULT_UPVOTE_POST_ACTION_WEIGHT as u32);
@@ -1088,7 +1161,7 @@ fn change_post_score_should_fail_post_not_found() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_post(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_noop!(Blogs::change_post_score(ACCOUNT1, 2, self::scoring_action_upvote_post()), MSG_POST_NOT_FOUND);
+    assert_noop!(_change_post_score_by_id(ACCOUNT1, 2, self::scoring_action_upvote_post()), MSG_POST_NOT_FOUND);
   });
 }
 
@@ -1156,7 +1229,7 @@ fn change_comment_score_should_work_upvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1 + DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as u32);
@@ -1170,7 +1243,7 @@ fn change_comment_score_should_work_downvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1184,8 +1257,8 @@ fn change_comment_score_should_revert_upvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, 0);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1199,8 +1272,8 @@ fn change_comment_score_should_revert_downvote() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, 0);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1215,9 +1288,9 @@ fn change_comment_score_check_cancel_upvote() {
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
 
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
 
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1);
@@ -1233,9 +1306,9 @@ fn change_comment_score_check_cancel_downvote() {
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
 
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_downvote_comment()));
 
-    assert_ok!(Blogs::change_comment_score(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
+    assert_ok!(_change_comment_score_by_id(ACCOUNT1, 1, self::scoring_action_upvote_comment()));
     assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT2).unwrap().reputation, 1 + DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as u32);
@@ -1250,7 +1323,7 @@ fn change_comment_score_should_fail_comment_not_found() {
     assert_ok!(_create_default_blog());
     assert_ok!(_create_default_post());
     assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None));
-    assert_noop!(Blogs::change_comment_score(ACCOUNT1, 2, self::scoring_action_upvote_comment()), MSG_COMMENT_NOT_FOUND);
+    assert_noop!(_change_comment_score_by_id(ACCOUNT1, 2, self::scoring_action_upvote_comment()), MSG_COMMENT_NOT_FOUND);
   });
 }
 

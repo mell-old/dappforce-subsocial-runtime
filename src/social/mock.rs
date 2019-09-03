@@ -16,6 +16,12 @@ impl_outer_origin! {
   pub enum Origin for Test {}
 }
 
+pub type AccountId = u64;
+pub type BlogId = u32;
+pub type PostId = u32;
+pub type CommentId = u32;
+pub type ReactionId = u32;
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Test;
 impl system::Trait for Test {
@@ -25,7 +31,7 @@ impl system::Trait for Test {
   type Hash = H256;
   type Hashing = BlakeTwo256;
   type Digest = Digest;
-  type AccountId = u64;
+  type AccountId = AccountId;
   type Header = Header;
   type Event = ();
   type Log = DigestItem;
@@ -39,10 +45,10 @@ impl timestamp::Trait for Test {
 
 impl blogs::Trait for Test {
   type Event = ();
-  type BlogId = u32;
-  type PostId = u32;
-  type CommentId = u32;
-  type ReactionId = u32;
+  type BlogId = BlogId;
+  type PostId = PostId;
+  type CommentId = CommentId;
+  type ReactionId = ReactionId;
 }
 
 pub fn build_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
