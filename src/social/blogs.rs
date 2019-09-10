@@ -500,7 +500,7 @@ decl_module! {
         let author = blog.created.account.clone();
         if let Some(score_diff) = Self::account_reputation_diff_by_account((follower.clone(), author.clone(), ScoringAction::FollowBlog)) {
           blog.score = blog.score.checked_sub(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
-          Self::change_social_account_reputation(author.clone(), follower.clone(), score_diff, ScoringAction::FollowBlog)?;
+          Self::change_social_account_reputation(author.clone(), follower.clone(), score_diff * -1, ScoringAction::FollowBlog)?;
         }
       }
 
@@ -1171,7 +1171,7 @@ impl<T: Trait> Module<T> {
     if blog.created.account != follower {
       let author = blog.created.account.clone();
       let score_diff = Self::get_score_diff(social_account.reputation, ScoringAction::FollowBlog);
-      blog.score = blog.score.checked_sub(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
+      blog.score = blog.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
       Self::change_social_account_reputation(author.clone(), follower.clone(), score_diff, ScoringAction::FollowBlog)?;
     }
 
@@ -1244,6 +1244,7 @@ impl<T: Trait> Module<T> {
       }
 
       <PostById<T>>::insert(post_id, post.clone());
+      <BlogById<T>>::insert(post.blog_id, blog.clone());
     }
 
     Ok(())
