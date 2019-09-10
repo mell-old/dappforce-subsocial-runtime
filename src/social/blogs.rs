@@ -70,6 +70,7 @@ pub const MSG_ACCOUNT_IS_NOT_FOLLOWING_BLOG: &str = "Account is not following th
 pub const MSG_ACCOUNT_CANNOT_FOLLOW_ITSELF: &str = "Account can not follow itself";
 pub const MSG_ACCOUNT_CANNOT_UNFOLLOW_ITSELF: &str = "Account can not unfollow itself";
 pub const MSG_ACCOUNT_IS_ALREADY_FOLLOWED: &str = "Account is already followed";
+pub const MSG_ACCOUNT_IS_NOT_FOLLOWED: &str = "Account is not followed by follower";
 pub const MSG_UNDERFLOW_UNFOLLOWING_BLOG: &str = "Underflow unfollowing blog";
 pub const MSG_OVERFLOW_FOLLOWING_BLOG: &str = "Overflow following blog";
 pub const MSG_OVERFLOW_FOLLOWING_ACCOUNT: &str = "Overflow following account";
@@ -541,13 +542,15 @@ decl_module! {
       Self::deposit_event(RawEvent::AccountFollowed(follower, account));
     }
 
-    fn unfollow_account(origin, account: T::AccountId) {
+    pub fn unfollow_account(origin, account: T::AccountId) {
       let follower = ensure_signed(origin)?;
 
       ensure!(follower != account, MSG_ACCOUNT_CANNOT_UNFOLLOW_ITSELF);
 
       let mut follower_account = Self::social_account_by_id(follower.clone()).ok_or(MSG_FOLLOWER_ACCOUNT_NOT_FOUND)?;
       let mut followed_account = Self::social_account_by_id(account.clone()).ok_or(MSG_FOLLOWED_ACCOUNT_NOT_FOUND)?;
+
+      ensure!(<AccountFollowedByAccount<T>>::exists((follower.clone(), account.clone())), MSG_ACCOUNT_IS_NOT_FOLLOWED);
 
       follower_account.following_accounts_count = follower_account.following_accounts_count
         .checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_ACCOUNT)?;
