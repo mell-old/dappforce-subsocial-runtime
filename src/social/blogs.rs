@@ -375,7 +375,6 @@ decl_storage! {
     NextReactionId get(next_reaction_id): T::ReactionId = T::ReactionId::sa(1);
 
     AccountReputationDiffByAccount get(account_reputation_diff_by_account): map (T::AccountId, T::AccountId, ScoringAction) => Option<i16>; // TODO shorten name (?refactor)
-    BlogScoreByAccount get(blog_score_by_account): map (T::AccountId, T::BlogId, ScoringAction) => Option<i16>;
     PostScoreByAccount get(post_score_by_account): map (T::AccountId, T::PostId, ScoringAction) => Option<i16>;
     CommentScoreByAccount get(comment_score_by_account): map (T::AccountId, T::CommentId, ScoringAction) => Option<i16>;
 
@@ -498,7 +497,11 @@ decl_module! {
       blog.followers_count = blog.followers_count.checked_sub(1).ok_or(MSG_UNDERFLOW_UNFOLLOWING_BLOG)?;
 
       if blog.created.account != follower {
-        Self::change_blog_score(follower.clone(), blog, ScoringAction::FollowBlog)?;
+        let author = blog.created.account.clone();
+        if let Some(score_diff) = Self::account_reputation_diff_by_account((follower.clone(), author.clone(), ScoringAction::FollowBlog)) {
+          blog.score = blog.score.checked_sub(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
+          Self::change_social_account_reputation(author.clone(), follower.clone(), score_diff, ScoringAction::FollowBlog)?;
+        }
       }
 
       <BlogsFollowedByAccount<T>>::mutate(follower.clone(), |blog_ids| Self::vec_remove_on(blog_ids, blog_id));
@@ -596,8 +599,6 @@ decl_module! {
       };
 
       blog.posts_count = blog.posts_count.checked_add(1).ok_or(MSG_OVERFLOW_ADDING_POST_ON_BLOG)?;
-
-      Self::change_blog_score(owner.clone(), blog, ScoringAction::CreatePost)?;
 
       <PostById<T>>::insert(post_id, new_post);
       <PostIdsByBlogId<T>>::mutate(blog_id, |ids| ids.push(post_id));
@@ -1168,7 +1169,10 @@ impl<T: Trait> Module<T> {
 
     blog.followers_count = blog.followers_count.checked_add(1).ok_or(MSG_OVERFLOW_FOLLOWING_BLOG)?;
     if blog.created.account != follower {
-      Self::change_blog_score(follower.clone(), blog, ScoringAction::FollowBlog)?;
+      let author = blog.created.account.clone();
+      let score_diff = Self::get_score_diff(social_account.reputation, ScoringAction::FollowBlog);
+      blog.score = blog.score.checked_sub(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
+      Self::change_social_account_reputation(author.clone(), follower.clone(), score_diff, ScoringAction::FollowBlog)?;
     }
 
     <BlogById<T>>::insert(blog_id, blog);
@@ -1206,71 +1210,37 @@ impl<T: Trait> Module<T> {
     }
   }
 
-  // TODO: change blog score in 'change_post_score' for some certain cases
-  pub fn change_blog_score(account: T::AccountId, blog: &mut Blog<T>, action: ScoringAction) -> Result {
-    let social_account = Self::get_or_new_social_account(account.clone());
-    let blog_id = blog.id;
-    
-    if blog.created.account != account {
-      if let Some(score_diff) = Self::blog_score_by_account((account.clone(), blog_id, action)) {
-        let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), blog.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
-        blog.score = blog.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_BLOG_SCORE)?;
-        Self::change_social_account_reputation(blog.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
-        <BlogScoreByAccount<T>>::remove((account.clone(), blog_id, action));
-      } else {
-        let score_diff = Self::get_score_diff(social_account.reputation, action);
-        blog.score = blog.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
-        Self::change_social_account_reputation(blog.created.account.clone(), account.clone(), score_diff, action)?;
-        <BlogScoreByAccount<T>>::insert((account.clone(), blog_id, action), score_diff);
-      }
-      <BlogById<T>>::insert(blog_id, blog.clone());
-    }
-
-    Ok(())
-  }
-
   pub fn change_post_score(account: T::AccountId, post: &mut Post<T>, action: ScoringAction) -> Result {
     let social_account = Self::get_or_new_social_account(account.clone());
     let post_id = post.id;
-    let mut change_blog_score = false;
+    let mut blog = Self::blog_by_id(post.blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
     
     if post.created.account != account {
       if let Some(score_diff) = Self::post_score_by_account((account.clone(), post_id, action)) {
         let reputation_diff = Self::account_reputation_diff_by_account((account.clone(), post.created.account.clone(), action)).ok_or(MSG_REPUTATION_DIFF_NOT_FOUND)?;
         post.score = post.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_POST_SCORE)?;
+        blog.score = blog.score.checked_add(score_diff as i32 * -1).ok_or(MSG_OUT_OF_BOUNDS_REVERTING_BLOG_SCORE)?;
         Self::change_social_account_reputation(post.created.account.clone(), account.clone(), reputation_diff * -1, action)?;
         <PostScoreByAccount<T>>::remove((account.clone(), post_id, action));
-        if Self::blog_score_by_account((account.clone(), post.blog_id, action)).is_some() {
-          change_blog_score = true;
-        }
       } else {
         match action {
           ScoringAction::UpvotePost => {
             if Self::post_score_by_account((account.clone(), post_id, ScoringAction::DownvotePost)).is_some() {
               Self::change_post_score(account.clone(), post, ScoringAction::DownvotePost)?;
             }
-            change_blog_score = true;
           },
           ScoringAction::DownvotePost => {
             if Self::post_score_by_account((account.clone(), post_id, ScoringAction::UpvotePost)).is_some() {
               Self::change_post_score(account.clone(), post, ScoringAction::UpvotePost)?;
             }
-            change_blog_score = true;
-          },
-          ScoringAction::CreatePost | ScoringAction::SharePost | ScoringAction::CreateComment => {
-            change_blog_score = true;
           },
           _ => (),
         }
         let score_diff = Self::get_score_diff(social_account.reputation, action);
         post.score = post.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_POST_SCORE)?;
+        blog.score = blog.score.checked_add(score_diff as i32).ok_or(MSG_OUT_OF_BOUNDS_UPDATING_BLOG_SCORE)?;
         Self::change_social_account_reputation(post.created.account.clone(), account.clone(), score_diff, action)?;
         <PostScoreByAccount<T>>::insert((account.clone(), post_id, action), score_diff);
-      }
-
-      if change_blog_score {
-        let ref mut blog = Self::blog_by_id(post.blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
-        Self::change_blog_score(account.clone(), blog, action)?;
       }
 
       <PostById<T>>::insert(post_id, post.clone());
