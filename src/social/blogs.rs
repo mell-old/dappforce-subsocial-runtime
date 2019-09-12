@@ -50,6 +50,7 @@ pub const MSG_UNKNOWN_PARENT_COMMENT: &str = "Unknown parent comment id";
 pub const MSG_ONLY_COMMENT_AUTHOR_CAN_UPDATE_COMMENT: &str = "Only comment author can update their comment";
 pub const MSG_NEW_COMMENT_HASH_DO_NOT_DIFFER: &str = "New comment IPFS-hash is the same as old one";
 pub const MSG_OVERFLOW_ADDING_COMMENT_ON_POST: &str = "Overflow adding comment on post";
+pub const MSG_OVERFLOW_REPLYING_ON_COMMENT: &str = "Overflow replying on comment";
 
 pub const MSG_REACTION_NOT_FOUND: &str = "Reaction was not found by id";
 pub const MSG_ACCOUNT_ALREADY_REACTED_TO_POST: &str = "Account has already reacted to this post. To change a kind of reaction call update_post_reaction()";
@@ -220,6 +221,7 @@ pub struct Comment<T: Trait> {
   pub upvotes_count: u16,
   pub downvotes_count: u16,
   pub shares_count: u16,
+  pub direct_replies_count: u16,
 
   pub edit_history: Vec<CommentHistoryRecord<T>>,
 
@@ -645,10 +647,6 @@ decl_module! {
       let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
       Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
-      if let Some(id) = parent_id {
-        ensure!(<CommentById<T>>::exists(id), MSG_UNKNOWN_PARENT_COMMENT);
-      }
-
       let comment_id = Self::next_comment_id();
       let new_comment: Comment<T> = Comment {
         id: comment_id,
@@ -660,6 +658,7 @@ decl_module! {
         upvotes_count: 0,
         downvotes_count: 0,
         shares_count: 0,
+        direct_replies_count: 0,
         edit_history: vec![],
         score: 0,
       };
@@ -667,6 +666,13 @@ decl_module! {
       post.comments_count = post.comments_count.checked_add(1).ok_or(MSG_OVERFLOW_ADDING_COMMENT_ON_POST)?;
 
       Self::change_post_score(owner.clone(), post, ScoringAction::CreateComment)?;
+
+      if let Some(id) = parent_id {
+        let mut parent_comment = Self::comment_by_id(id).ok_or(MSG_UNKNOWN_PARENT_COMMENT)?;
+        parent_comment.direct_replies_count = parent_comment.direct_replies_count.checked_add(1).ok_or(MSG_OVERFLOW_REPLYING_ON_COMMENT)?;
+        <CommentById<T>>::insert(id, parent_comment);
+      }
+
       <CommentById<T>>::insert(comment_id, new_comment);
       <CommentIdsByPostId<T>>::mutate(post_id, |ids| ids.push(comment_id));
       <NextCommentId<T>>::mutate(|n| { *n += T::CommentId::sa(1); });

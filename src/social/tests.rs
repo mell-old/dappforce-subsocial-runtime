@@ -557,6 +557,7 @@ fn create_post_should_work() {
     assert_eq!(post.comments_count, 0);
     assert_eq!(post.upvotes_count, 0);
     assert_eq!(post.downvotes_count, 0);
+    assert_eq!(post.shares_count, 0);
     assert!(post.edit_history.is_empty());
   });
 }
@@ -811,7 +812,28 @@ fn create_comment_should_work() {
     assert_eq!(comment.ipfs_hash, self::comment_ipfs_hash());
     assert_eq!(comment.upvotes_count, 0);
     assert_eq!(comment.downvotes_count, 0);
+    assert_eq!(comment.shares_count, 0);
+    assert_eq!(comment.direct_replies_count, 0);
     assert!(comment.edit_history.is_empty());
+  });
+}
+
+#[test]
+fn create_comment_should_work_with_parent() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+    assert_ok!(_create_comment(None, None, Some(1), None)); // CommentId 2 with parent CommentId 1
+
+    // Check storages
+    assert_eq!(Blogs::comment_ids_by_post_id(1), vec![1, 2]);
+    assert_eq!(Blogs::next_comment_id(), 3);
+    assert_eq!(Blogs::post_by_id(1).unwrap().comments_count, 2);
+
+    // Check whether data stored correctly
+    assert_eq!(Blogs::comment_by_id(2).unwrap().parent_id, Some(1));
+    assert_eq!(Blogs::comment_by_id(1).unwrap().direct_replies_count, 1);
   });
 }
 
