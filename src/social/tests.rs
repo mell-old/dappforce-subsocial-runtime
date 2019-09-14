@@ -84,6 +84,9 @@ fn scoring_action_downvote_post() -> ScoringAction {
 fn scoring_action_share_post() -> ScoringAction {
   ScoringAction::SharePost
 }
+fn scoring_action_create_comment() -> ScoringAction {
+  ScoringAction::CreateComment
+}
 fn scoring_action_upvote_comment() -> ScoringAction {
   ScoringAction::UpvoteComment
 }
@@ -1116,6 +1119,7 @@ fn score_diff_by_weights_check_result() {
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_upvote_post()), DEFAULT_UPVOTE_POST_ACTION_WEIGHT as i16);
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_downvote_post()), DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT as i16);
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_share_post()), DEFAULT_SHARE_POST_ACTION_WEIGHT as i16);
+    assert_eq!(Blogs::get_score_diff(1, self::scoring_action_create_comment()), DEFAULT_CREATE_COMMENT_ACTION_WEIGHT as i16);
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_upvote_comment()), DEFAULT_UPVOTE_COMMENT_ACTION_WEIGHT as i16);
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_downvote_comment()), DEFAULT_DOWNVOTE_COMMENT_ACTION_WEIGHT as i16);
     assert_eq!(Blogs::get_score_diff(1, self::scoring_action_share_comment()), DEFAULT_SHARE_COMMENT_ACTION_WEIGHT as i16);
@@ -1182,6 +1186,20 @@ fn change_blog_score_should_work_downvote_post() {
 }
 
 //--------------------------------------------------------------------------------------------------
+
+#[test]
+fn change_post_score_should_work_create_comment() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_comment(Some(Origin::signed(ACCOUNT2)), None, None, None)); // CommentId 1
+
+    assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_CREATE_COMMENT_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::blog_by_id(1).unwrap().score, DEFAULT_CREATE_COMMENT_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1 + DEFAULT_CREATE_COMMENT_ACTION_WEIGHT as u32);
+    assert_eq!(Blogs::post_score_by_account((ACCOUNT2, 1, self::scoring_action_create_comment())), Some(DEFAULT_CREATE_COMMENT_ACTION_WEIGHT));
+  });
+}
 
 #[test]
 fn change_post_score_should_work_upvote() {

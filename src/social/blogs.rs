@@ -302,7 +302,6 @@ pub struct ProfileHistoryRecord<T: Trait> {
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq)]
 pub enum ScoringAction {
-  CreatePost,
   UpvotePost,
   DownvotePost,
   SharePost,
@@ -335,7 +334,6 @@ decl_storage! {
     PostMaxLen get(post_max_len): u32 = DEFAULT_POST_MAX_LEN;
     CommentMaxLen get(comment_max_len): u32 = DEFAULT_COMMENT_MAX_LEN;
 
-    CreatePostActionWeight get (create_post_action_weight): i16 = DEFAULT_CREATE_POST_ACTION_WEIGHT;
     UpvotePostActionWeight get (upvote_post_action_weight): i16 = DEFAULT_UPVOTE_POST_ACTION_WEIGHT;
     DownvotePostActionWeight get (downvote_post_action_weight): i16 = DEFAULT_DOWNVOTE_POST_ACTION_WEIGHT;
     SharePostActionWeight get (share_post_action_weight): i16 = DEFAULT_SHARE_POST_ACTION_WEIGHT;
@@ -1335,7 +1333,6 @@ impl<T: Trait> Module<T> {
 
   fn weight_of_scoring_action(action: ScoringAction) -> i16 {
     match action {
-      ScoringAction::CreatePost => Self::create_post_action_weight(),
       ScoringAction::UpvotePost => Self::upvote_post_action_weight(),
       ScoringAction::DownvotePost => Self::downvote_post_action_weight(),
       ScoringAction::SharePost => Self::share_post_action_weight(),
