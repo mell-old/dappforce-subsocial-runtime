@@ -38,9 +38,6 @@ pub const MSG_NOTHING_TO_UPDATE_IN_BLOG: &str = "Nothing to update in a blog";
 pub const MSG_ONLY_BLOG_OWNER_CAN_UPDATE_BLOG: &str = "Only a blog owner can update their blog";
 
 pub const MSG_POST_NOT_FOUND: &str = "Post was not found by id";
-pub const MSG_POST_SLUG_IS_TOO_SHORT: &str = "Post slug is too short";
-pub const MSG_POST_SLUG_IS_TOO_LONG: &str = "Post slug is too long";
-pub const MSG_POST_SLUG_IS_NOT_UNIQUE: &str = "Post slug is not unique";
 pub const MSG_NOTHING_TO_UPDATE_IN_POST: &str = "Nothing to update in a post";
 pub const MSG_ONLY_POST_OWNER_CAN_UPDATE_POST: &str = "Only post owner can update their post";
 pub const MSG_OVERFLOW_ADDING_POST_ON_BLOG: &str = "Overflow adding post on blog";
@@ -177,8 +174,6 @@ pub struct Post<T: Trait> {
 
   // Next fields can be updated by the owner only:
 
-  // TODO make slug optional for post or even remove it
-  pub slug: Vec<u8>,
   pub ipfs_hash: Vec<u8>,
 
   pub comments_count: u16,
@@ -195,7 +190,6 @@ pub struct Post<T: Trait> {
 #[derive(Clone, Encode, Decode, PartialEq)]
 pub struct PostUpdate<T: Trait> {
   pub blog_id: Option<T::BlogId>,
-  pub slug: Option<Vec<u8>>,
   pub ipfs_hash: Option<Vec<u8>>,
 }
 
@@ -360,7 +354,6 @@ decl_storage! {
     CommentReactionIdByAccount get(comment_reaction_id_by_account): map (T::AccountId, T::CommentId) => T::ReactionId;
 
     BlogIdBySlug get(blog_id_by_slug): map Vec<u8> => Option<T::BlogId>;
-    PostIdBySlug get(post_id_by_slug): map Vec<u8> => Option<T::PostId>;
 
     BlogsFollowedByAccount get(blogs_followed_by_account): map T::AccountId => Vec<T::BlogId>;
     BlogFollowers get(blog_followers): map T::BlogId => Vec<T::AccountId>;
@@ -575,14 +568,11 @@ decl_module! {
     }
 
     // TODO use PostUpdate to pass data?
-    pub fn create_post(origin, blog_id: T::BlogId, slug: Vec<u8>, ipfs_hash: Vec<u8>) {
+    pub fn create_post(origin, blog_id: T::BlogId, ipfs_hash: Vec<u8>) {
       let owner = ensure_signed(origin)?;
 
       let ref mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
 
-      ensure!(slug.len() >= Self::slug_min_len() as usize, MSG_POST_SLUG_IS_TOO_SHORT);
-      ensure!(slug.len() <= Self::slug_max_len() as usize, MSG_POST_SLUG_IS_TOO_LONG);
-      ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
       Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
 
       let post_id = Self::next_post_id();
@@ -591,7 +581,6 @@ decl_module! {
         blog_id,
         created: Self::new_change(owner.clone()),
         updated: None,
-        slug: slug.clone(),
         ipfs_hash,
         comments_count: 0,
         upvotes_count: 0,
@@ -605,7 +594,6 @@ decl_module! {
 
       <PostById<T>>::insert(post_id, new_post);
       <PostIdsByBlogId<T>>::mutate(blog_id, |ids| ids.push(post_id));
-      <PostIdBySlug<T>>::insert(slug, post_id);
       <NextPostId<T>>::mutate(|n| { *n += T::PostId::sa(1); });
       <BlogById<T>>::insert(blog_id, blog);
 
@@ -912,7 +900,6 @@ decl_module! {
       
       let has_updates = 
         update.blog_id.is_some() ||
-        update.slug.is_some() ||
         update.ipfs_hash.is_some();
 
       ensure!(has_updates, MSG_NOTHING_TO_UPDATE_IN_POST);
@@ -925,20 +912,8 @@ decl_module! {
       let mut fields_updated = 0;
       let mut new_history_record = PostHistoryRecord {
         edited: Self::new_change(owner.clone()),
-        old_data: PostUpdate {blog_id: None, slug: None, ipfs_hash: None}
+        old_data: PostUpdate {blog_id: None, ipfs_hash: None}
       };
-
-      if let Some(slug) = update.slug {
-        if slug != post.slug {
-          // TODO validate slug.
-          ensure!(!<PostIdBySlug<T>>::exists(slug.clone()), MSG_POST_SLUG_IS_NOT_UNIQUE);
-          <PostIdBySlug<T>>::remove(post.slug.clone());
-          <PostIdBySlug<T>>::insert(slug.clone(), post_id);
-          new_history_record.old_data.slug = Some(post.slug);
-          post.slug = slug;
-          fields_updated += 1;
-        }
-      }
 
       if let Some(ipfs_hash) = update.ipfs_hash {
         if ipfs_hash != post.ipfs_hash {
