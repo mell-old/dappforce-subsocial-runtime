@@ -700,50 +700,6 @@ fn update_post_should_fail_not_an_owner() {
   });
 }
 
-// TODO uncomment when slug validation implemented:
-// #[test]
-// fn update_post_should_fail_short_slug() {
-//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
-
-//   with_externalities(&mut build_ext(), || {
-//     assert_ok!(_create_default_blog()); // BlogId 1
-//     assert_ok!(_create_default_post()); // PostId 1
-  
-//     // Try to catch an error updating a post with too short slug
-//     assert_noop!(_update_post(None, None,
-//       Some(
-//         self::post_update(
-//           None, 
-//           Some(slug),
-//           None
-//         )
-//       )
-//     ), MSG_POST_SLUG_IS_TOO_SHORT);
-//   });
-// }
-
-// TODO uncomment when slug validation implemented:
-// #[test]
-// fn update_post_should_fail_long_slug() {
-//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
-
-//   with_externalities(&mut build_ext(), || {
-//     assert_ok!(_create_default_blog()); // BlogId 1
-//     assert_ok!(_create_default_post()); // PostId 1
-  
-//     // Try to catch an error updating a post with too long slug
-//     assert_noop!(_update_post(None, None,
-//       Some(
-//         self::post_update(
-//           None, 
-//           Some(slug),
-//           None
-//         )
-//       )
-//     ), MSG_POST_SLUG_IS_TOO_LONG);
-//   });
-// }
-
 #[test]
 fn update_post_should_fail_not_unique_slug() {
   let slug : Vec<u8> = b"unique_slug".to_vec();
