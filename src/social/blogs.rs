@@ -171,7 +171,7 @@ pub struct Post<T: Trait> {
   pub blog_id: T::BlogId,
   pub created: Change<T>,
   updated: Option<Change<T>>,
-  extension: PostExtension<T>,
+  pub extension: PostExtension<T>,
 
   // Next fields can be updated by the owner only:
 
@@ -204,13 +204,14 @@ pub struct PostHistoryRecord<T: Trait> {
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq)]
 pub enum PostExtension<T: Trait> {
-    SimplePost,
+    RegularPost,
     SharedPost(T::PostId),
+    SharedComment(T::CommentId),
 }
 
 impl <T: Trait> Default for PostExtension<T> {
     fn default() -> Self {
-        PostExtension::SimplePost
+        PostExtension::RegularPost
     }
 }
 
@@ -402,8 +403,7 @@ decl_event! {
     <T as Trait>::BlogId,
     <T as Trait>::PostId,
     <T as Trait>::CommentId,
-    <T as Trait>::ReactionId,
-    PostExtension = PostExtension<T>
+    <T as Trait>::ReactionId
   {
     BlogCreated(AccountId, BlogId),
     BlogUpdated(AccountId, BlogId),
@@ -417,7 +417,7 @@ decl_event! {
     AccountFollowed(AccountId, AccountId),
     AccountUnfollowed(AccountId, AccountId),
 
-    PostCreated(AccountId, PostId, PostExtension),
+    PostCreated(AccountId, PostId),
     PostUpdated(AccountId, PostId),
     PostDeleted(AccountId, PostId),
     PostShared(AccountId, PostId),
@@ -588,7 +588,7 @@ decl_module! {
 
       let ref mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
 
-      if extension == PostExtension::SimplePost {
+      if extension == PostExtension::RegularPost {
         Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
       }
 
@@ -598,7 +598,7 @@ decl_module! {
         blog_id,
         created: Self::new_change(owner.clone()),
         updated: None,
-        extension: extension.clone(),
+        extension,
         ipfs_hash,
         comments_count: 0,
         upvotes_count: 0,
@@ -615,7 +615,7 @@ decl_module! {
       <NextPostId<T>>::mutate(|n| { *n += T::PostId::sa(1); });
       <BlogById<T>>::insert(blog_id, blog);
 
-      Self::deposit_event(RawEvent::PostCreated(owner.clone(), post_id, extension.clone()));
+      Self::deposit_event(RawEvent::PostCreated(owner.clone(), post_id));
     }
 
     pub fn share_post(origin, post_id: T::PostId) {
