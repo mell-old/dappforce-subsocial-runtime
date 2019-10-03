@@ -588,8 +588,27 @@ decl_module! {
 
       let ref mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
 
-      if extension == PostExtension::RegularPost {
-        Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
+      // Sharing functions contain check for post/comment existance
+      match extension {
+        PostExtension::RegularPost => {
+          Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
+        },
+        PostExtension::SharedPost(post_id) => {
+          if Self::post_shared_by_account((owner.clone(), post_id)) {
+            Self::unshare_post(owner.clone(), post_id)?;
+          }
+          else {
+            Self::share_post(owner.clone(), post_id)?;
+          }
+        },
+        PostExtension::SharedComment(comment_id) => {
+          if Self::comment_shared_by_account((owner.clone(), comment_id)) {
+            Self::unshare_comment(owner.clone(), comment_id)?;
+          }
+          else {
+            Self::share_comment(owner.clone(), comment_id)?;
+          }
+        },
       }
 
       let post_id = Self::next_post_id();
@@ -616,32 +635,6 @@ decl_module! {
       <BlogById<T>>::insert(blog_id, blog);
 
       Self::deposit_event(RawEvent::PostCreated(owner.clone(), post_id));
-    }
-
-    pub fn share_post(origin, post_id: T::PostId) {
-      let owner = ensure_signed(origin)?;
-
-      ensure!(!Self::post_shared_by_account((owner.clone(), post_id)), MSG_ACCOUNT_ALREADY_SHARED_POST);
-
-      let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-      Self::change_post_score(owner.clone(), post, ScoringAction::SharePost)?;
-
-      <PostSharedByAccount<T>>::insert((owner.clone(), post_id), true);
-      <AccountsThatSharedPost<T>>::mutate(post_id, |ids| ids.push(owner.clone()));
-
-      Self::deposit_event(RawEvent::PostShared(owner.clone(), post_id));
-    }
-
-    pub fn unshare_post(origin, post_id: T::PostId) {
-      let owner = ensure_signed(origin)?;
-
-      ensure!(Self::post_shared_by_account((owner.clone(), post_id)), MSG_POST_IS_NOT_SHARED_BY_ACCOUNT);
-
-      let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-      Self::change_post_score(owner.clone(), post, ScoringAction::SharePost)?;
-
-      <PostSharedByAccount<T>>::remove((owner.clone(), post_id));
-      <AccountsThatSharedPost<T>>::mutate(post_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
     }
 
     // TODO use CommentUpdate to pass data?
@@ -683,32 +676,6 @@ decl_module! {
       <PostById<T>>::insert(post_id, post);
 
       Self::deposit_event(RawEvent::CommentCreated(owner.clone(), comment_id));
-    }
-
-    pub fn share_comment(origin, comment_id: T::CommentId) {
-      let owner = ensure_signed(origin)?;
-
-      ensure!(!Self::comment_shared_by_account((owner.clone(), comment_id)), MSG_ACCOUNT_ALREADY_SHARED_COMMENT);
-
-      let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
-      Self::change_comment_score(owner.clone(), comment, ScoringAction::ShareComment)?;
-
-      <CommentSharedByAccount<T>>::insert((owner.clone(), comment_id), true);
-      <AccountsThatSharedComment<T>>::mutate(comment_id, |ids| ids.push(owner.clone()));
-
-      Self::deposit_event(RawEvent::CommentShared(owner.clone(), comment_id));
-    }
-
-    pub fn unshare_comment(origin, comment_id: T::CommentId) {
-      let owner = ensure_signed(origin)?;
-
-      ensure!(Self::comment_shared_by_account((owner.clone(), comment_id)), MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT);
-
-      let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
-      Self::change_comment_score(owner.clone(), comment, ScoringAction::ShareComment)?;
-
-      <CommentSharedByAccount<T>>::remove((owner.clone(), comment_id));
-      <AccountsThatSharedComment<T>>::mutate(comment_id, |account_ids| Self::vec_remove_on(account_ids, owner.clone()));
     }
 
     pub fn create_post_reaction(origin, post_id: T::PostId, kind: ReactionKind) {
@@ -1356,6 +1323,50 @@ impl<T: Trait> Module<T> {
 
   fn is_ipfs_hash_valid(ipfs_hash: Vec<u8>) -> Result {
     ensure!(ipfs_hash.len() == Self::ipfs_hash_len() as usize, MSG_IPFS_IS_INCORRECT);
+
+    Ok(())
+  }
+
+  fn share_post(account: T::AccountId, post_id: T::PostId) -> Result {
+    let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+    Self::change_post_score(account.clone(), post, ScoringAction::SharePost)?;
+
+    <PostSharedByAccount<T>>::insert((account.clone(), post_id), true);
+    <AccountsThatSharedPost<T>>::mutate(post_id, |ids| ids.push(account.clone()));
+
+    Self::deposit_event(RawEvent::PostShared(account, post_id));
+
+    Ok(())
+  }
+
+  fn unshare_post(account: T::AccountId, post_id: T::PostId) -> Result {
+    let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
+    Self::change_post_score(account.clone(), post, ScoringAction::SharePost)?;
+
+    <PostSharedByAccount<T>>::remove((account.clone(), post_id));
+    <AccountsThatSharedPost<T>>::mutate(post_id, |account_ids| Self::vec_remove_on(account_ids, account.clone()));
+
+    Ok(())
+  }
+
+  pub fn share_comment(account: T::AccountId, comment_id: T::CommentId) -> Result {
+    let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+    Self::change_comment_score(account.clone(), comment, ScoringAction::ShareComment)?;
+
+    <CommentSharedByAccount<T>>::insert((account.clone(), comment_id), true);
+    <AccountsThatSharedComment<T>>::mutate(comment_id, |ids| ids.push(account.clone()));
+
+    Self::deposit_event(RawEvent::CommentShared(account.clone(), comment_id));
+
+    Ok(())
+  }
+
+  pub fn unshare_comment(account: T::AccountId, comment_id: T::CommentId) -> Result {
+    let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+    Self::change_comment_score(account.clone(), comment, ScoringAction::ShareComment)?;
+
+    <CommentSharedByAccount<T>>::remove((account.clone(), comment_id));
+    <AccountsThatSharedComment<T>>::mutate(comment_id, |account_ids| Self::vec_remove_on(account_ids, account.clone()));
 
     Ok(())
   }
