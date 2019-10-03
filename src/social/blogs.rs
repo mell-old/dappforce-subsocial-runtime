@@ -91,6 +91,7 @@ pub const MSG_REPUTATION_DIFF_NOT_FOUND: &str = "Scored account reputation diffe
 
 pub const MSG_ACCOUNT_ALREADY_SHARED_POST: &str = "Account has already shared this post";
 pub const MSG_POST_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this post";
+pub const MSG_OVERFLOW_SHARING_POST: &str = "Overflow sharing post";
 pub const MSG_ACCOUNT_ALREADY_SHARED_COMMENT: &str = "Account has already shared this comment";
 pub const MSG_COMMENT_IS_NOT_SHARED_BY_ACCOUNT: &str = "Account has already unshared this comment";
 
@@ -387,11 +388,11 @@ decl_storage! {
     PostScoreByAccount get(post_score_by_account): map (T::AccountId, T::PostId, ScoringAction) => Option<i16>;
     CommentScoreByAccount get(comment_score_by_account): map (T::AccountId, T::CommentId, ScoringAction) => Option<i16>;
 
-    PostSharedByAccount get(post_shared_by_account): map (T::AccountId, T::PostId) => bool;
-    AccountsThatSharedPost get(accounts_that_shared_post): map T::PostId => Vec<T::AccountId>;
+    PostSharedByAccount get(post_shared_by_account): map (T::AccountId, T::PostId) => u16;
+    SharedPostIdsByOriginalPostId get(shared_post_ids_by_original_post_id): map T::PostId => Vec<T::PostId>;
 
-    CommentSharedByAccount get(comment_shared_by_account): map (T::AccountId, T::CommentId) => bool;
-    AccountsThatSharedComment get(accounts_that_shared_comment): map T::CommentId => Vec<T::AccountId>;
+    // CommentSharedByAccount get(comment_shared_by_account): map (T::AccountId, T::CommentId) => bool;
+    // SharedCommentIdsByOriginalCommentId get(shared_comment_ids_by_original_comment_id): map T::CommentId => Vec<T::CommentId>;
 
     AccountByProfileUsername get(account_by_profile_username): map Vec<u8> => Option<T::AccountId>;
   }
@@ -586,7 +587,10 @@ decl_module! {
     pub fn create_post(origin, blog_id: T::BlogId, ipfs_hash: Vec<u8>, extension: PostExtension<T>) {
       let owner = ensure_signed(origin)?;
 
-      let ref mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
+      let mut blog = Self::blog_by_id(blog_id).ok_or(MSG_BLOG_NOT_FOUND)?;
+      blog.posts_count = blog.posts_count.checked_add(1).ok_or(MSG_OVERFLOW_ADDING_POST_ON_BLOG)?;
+
+      let new_post_id = Self::next_post_id();
 
       // Sharing functions contain check for post/comment existance
       match extension {
@@ -594,26 +598,15 @@ decl_module! {
           Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
         },
         PostExtension::SharedPost(post_id) => {
-          if Self::post_shared_by_account((owner.clone(), post_id)) {
-            Self::unshare_post(owner.clone(), post_id)?;
-          }
-          else {
-            Self::share_post(owner.clone(), post_id)?;
-          }
+          Self::share_post(owner.clone(), new_post_id, post_id)?;
         },
-        PostExtension::SharedComment(comment_id) => {
-          if Self::comment_shared_by_account((owner.clone(), comment_id)) {
-            Self::unshare_comment(owner.clone(), comment_id)?;
-          }
-          else {
-            Self::share_comment(owner.clone(), comment_id)?;
-          }
+        PostExtension::SharedComment(_comment_id) => {
+          // Self::shared_comment(ower.clone(), new_post_id, post_id)?;
         },
       }
 
-      let post_id = Self::next_post_id();
       let new_post: Post<T> = Post {
-        id: post_id,
+        id: new_post_id,
         blog_id,
         created: Self::new_change(owner.clone()),
         updated: None,
@@ -627,14 +620,12 @@ decl_module! {
         score: 0,
       };
 
-      blog.posts_count = blog.posts_count.checked_add(1).ok_or(MSG_OVERFLOW_ADDING_POST_ON_BLOG)?;
-
-      <PostById<T>>::insert(post_id, new_post);
-      <PostIdsByBlogId<T>>::mutate(blog_id, |ids| ids.push(post_id));
+      <PostById<T>>::insert(new_post_id, new_post);
+      <PostIdsByBlogId<T>>::mutate(blog_id, |ids| ids.push(new_post_id));
       <NextPostId<T>>::mutate(|n| { *n += T::PostId::sa(1); });
       <BlogById<T>>::insert(blog_id, blog);
 
-      Self::deposit_event(RawEvent::PostCreated(owner.clone(), post_id));
+      Self::deposit_event(RawEvent::PostCreated(owner.clone(), new_post_id));
     }
 
     // TODO use CommentUpdate to pass data?
@@ -1327,47 +1318,32 @@ impl<T: Trait> Module<T> {
     Ok(())
   }
 
-  fn share_post(account: T::AccountId, post_id: T::PostId) -> Result {
-    let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-    Self::change_post_score(account.clone(), post, ScoringAction::SharePost)?;
+  fn share_post(account: T::AccountId, original_post_id: T::PostId, shared_post_id: T::PostId) -> Result {
+    let mut shares_count = Self::post_shared_by_account((account.clone(), original_post_id));
+    shares_count = shares_count.checked_add(1).ok_or(MSG_OVERFLOW_SHARING_POST)?;
 
-    <PostSharedByAccount<T>>::insert((account.clone(), post_id), true);
-    <AccountsThatSharedPost<T>>::mutate(post_id, |ids| ids.push(account.clone()));
+    if shares_count == 1 {
+      let ref mut shared_post = Self::post_by_id(shared_post_id).ok_or(MSG_POST_NOT_FOUND)?;
+      Self::change_post_score(account.clone(), shared_post, ScoringAction::SharePost)?;
+    }
 
-    Self::deposit_event(RawEvent::PostShared(account, post_id));
+    <PostSharedByAccount<T>>::insert((account.clone(), shared_post_id), shares_count); // TODO Maybe use mutate instead?
+    <SharedPostIdsByOriginalPostId<T>>::mutate(original_post_id, |ids| ids.push(shared_post_id));
 
-    Ok(())
-  }
-
-  fn unshare_post(account: T::AccountId, post_id: T::PostId) -> Result {
-    let ref mut post = Self::post_by_id(post_id).ok_or(MSG_POST_NOT_FOUND)?;
-    Self::change_post_score(account.clone(), post, ScoringAction::SharePost)?;
-
-    <PostSharedByAccount<T>>::remove((account.clone(), post_id));
-    <AccountsThatSharedPost<T>>::mutate(post_id, |account_ids| Self::vec_remove_on(account_ids, account.clone()));
+    Self::deposit_event(RawEvent::PostShared(account, original_post_id));
 
     Ok(())
   }
 
-  pub fn share_comment(account: T::AccountId, comment_id: T::CommentId) -> Result {
-    let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
-    Self::change_comment_score(account.clone(), comment, ScoringAction::ShareComment)?;
+  // pub fn share_comment(account: T::AccountId, original_comment_id: T::CommentId, shared_comment_id: T::CommentId) -> Result {
+  //   let ref mut shared_comment = Self::comment_by_id(shared_comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
+  //   Self::change_comment_score(account.clone(), shared_comment, ScoringAction::ShareComment)?;
 
-    <CommentSharedByAccount<T>>::insert((account.clone(), comment_id), true);
-    <AccountsThatSharedComment<T>>::mutate(comment_id, |ids| ids.push(account.clone()));
+  //   <CommentSharedByAccount<T>>::insert((account.clone(), original_comment_id), true);
+  //   <SharedCommentIdsByOriginalCommentId<T>>::mutate(original_comment_id, |ids| ids.push(shared_comment_id));
 
-    Self::deposit_event(RawEvent::CommentShared(account.clone(), comment_id));
+  //   Self::deposit_event(RawEvent::CommentShared(account.clone(), original_comment_id));
 
-    Ok(())
-  }
-
-  pub fn unshare_comment(account: T::AccountId, comment_id: T::CommentId) -> Result {
-    let ref mut comment = Self::comment_by_id(comment_id).ok_or(MSG_COMMENT_NOT_FOUND)?;
-    Self::change_comment_score(account.clone(), comment, ScoringAction::ShareComment)?;
-
-    <CommentSharedByAccount<T>>::remove((account.clone(), comment_id));
-    <AccountsThatSharedComment<T>>::mutate(comment_id, |account_ids| Self::vec_remove_on(account_ids, account.clone()));
-
-    Ok(())
-  }
+  //   Ok(())
+  // }
 }
