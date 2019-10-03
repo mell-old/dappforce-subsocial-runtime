@@ -25,18 +25,13 @@ fn blog_update(writers: Option<Vec<AccountId>>, slug: Option<Vec<u8>>, ipfs_hash
   }
 }
 
-fn post_slug() -> Vec<u8> {
-  b"post_slug".to_vec()
-}
-
 fn post_ipfs_hash() -> Vec<u8> {
   b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW2CuDgwxkD4".to_vec()
 }
 
-fn post_update(blog_id: Option<BlogId>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> PostUpdate<Test> {
+fn post_update(blog_id: Option<BlogId>, ipfs_hash: Option<Vec<u8>>) -> PostUpdate<Test> {
   PostUpdate {
     blog_id,
-    slug,
     ipfs_hash
   }
 }
@@ -58,7 +53,6 @@ fn comment_update(ipfs_hash: Vec<u8>) -> CommentUpdate {
 fn alice_username() -> Vec<u8> {
   b"Alice".to_vec()
 }
-
 fn bob_username() -> Vec<u8> {
   b"Bob".to_vec()
 }
@@ -70,7 +64,6 @@ fn profile_ipfs_hash() -> Vec<u8> {
 fn reaction_upvote() -> ReactionKind {
   ReactionKind::Upvote
 }
-
 fn reaction_downvote() -> ReactionKind {
   ReactionKind::Downvote
 }
@@ -101,6 +94,16 @@ fn scoring_action_follow_blog() -> ScoringAction {
 }
 fn scoring_action_follow_account() -> ScoringAction {
   ScoringAction::FollowAccount
+}
+
+fn extension_regular_post() -> PostExtension<Test> {
+  PostExtension::RegularPost
+}
+fn extension_shared_post() -> PostExtension<Test> {
+  PostExtension::SharedPost(1)
+}
+fn extension_shared_comment() -> PostExtension<Test> {
+  PostExtension::SharedComment(1)
 }
 
 fn _create_default_blog() -> dispatch::Result {
@@ -149,12 +152,12 @@ fn _create_default_post() -> dispatch::Result {
   _create_post(None, None, None, None)
 }
 
-fn _create_post(origin: Option<Origin>, blog_id: Option<BlogId>, slug: Option<Vec<u8>>, ipfs_hash: Option<Vec<u8>>) -> dispatch::Result {
+fn _create_post(origin: Option<Origin>, blog_id: Option<BlogId>, ipfs_hash: Option<Vec<u8>>, extension: Option<PostExtension<Test>>) -> dispatch::Result {
   Blogs::create_post(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     blog_id.unwrap_or(1),
-    slug.unwrap_or(self::post_slug()),
-    ipfs_hash.unwrap_or(self::post_ipfs_hash())
+    ipfs_hash.unwrap_or(self::post_ipfs_hash()),
+    extension.unwrap_or(self::extension_regular_post())
   )
 }
 
@@ -162,7 +165,7 @@ fn _update_post(origin: Option<Origin>, post_id: Option<PostId>, update: Option<
   Blogs::update_post(
     origin.unwrap_or(Origin::signed(ACCOUNT1)),
     post_id.unwrap_or(1),
-    update.unwrap_or(self::post_update(None, None, None))
+    update.unwrap_or(self::post_update(None, None))
   )
 }
 
@@ -547,7 +550,6 @@ fn create_post_should_work() {
 
     // Check storages
     assert_eq!(Blogs::post_ids_by_blog_id(1), vec![1]);
-    assert_eq!(Blogs::post_id_by_slug(self::post_slug()), Some(1));
     assert_eq!(Blogs::next_post_id(), 2);
 
     // Check whether data stored correctly
@@ -555,7 +557,6 @@ fn create_post_should_work() {
 
     assert_eq!(post.blog_id, 1);
     assert_eq!(post.created.account, ACCOUNT1);
-    assert_eq!(post.slug, self::post_slug());
     assert_eq!(post.ipfs_hash, self::post_ipfs_hash());
     assert_eq!(post.comments_count, 0);
     assert_eq!(post.upvotes_count, 0);
@@ -573,13 +574,12 @@ fn create_post_should_fail_invalid_ipfs_hash() {
     assert_ok!(_create_default_blog()); // BlogId 1
 
     // Try to catch an error creating a post with invalid ipfs_hash
-    assert_noop!(_create_post(None, None, None, Some(ipfs_hash)), MSG_IPFS_IS_INCORRECT);
+    assert_noop!(_create_post(None, None, Some(ipfs_hash), None), MSG_IPFS_IS_INCORRECT);
   });
 }
 
 #[test]
 fn update_post_should_work() {
-  let slug : Vec<u8> = b"new_slug".to_vec();
   let ipfs_hash : Vec<u8> = b"QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4".to_vec();
 
   with_externalities(&mut build_ext(), || {
@@ -591,7 +591,6 @@ fn update_post_should_work() {
       Some(
         self::post_update(
           None,
-          Some(slug.clone()),
           Some(ipfs_hash.clone())
         )
       )
@@ -601,12 +600,10 @@ fn update_post_should_work() {
     // Check whether post updates correctly
     let post = Blogs::post_by_id(1).unwrap();
     assert_eq!(post.blog_id, 1);
-    assert_eq!(post.slug, slug);
     assert_eq!(post.ipfs_hash, ipfs_hash);
 
     // Check whether history recorded correctly
     assert_eq!(post.edit_history[0].old_data.blog_id, None);
-    assert_eq!(post.edit_history[0].old_data.slug, Some(self::post_slug()));
     assert_eq!(post.edit_history[0].old_data.ipfs_hash, Some(self::post_ipfs_hash()));
   });
 }
@@ -624,18 +621,16 @@ fn update_post_should_fail_nothing_to_update() {
 
 #[test]
 fn update_post_should_fail_post_not_found() {
-  let slug : Vec<u8> = b"new_slug".to_vec();
-
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(None, Some(b"blog2_slug".to_vec()), None)); // BlogId 2
     assert_ok!(_create_default_post()); // PostId 1
   
     // Try to catch an error updating a post with wrong post ID
     assert_noop!(_update_post(None, Some(2),
       Some(
         self::post_update(
-          None, 
-          Some(slug),
+          Some(2), 
           None
         )
       )
@@ -645,50 +640,20 @@ fn update_post_should_fail_post_not_found() {
 
 #[test]
 fn update_post_should_fail_not_an_owner() {
-  let slug : Vec<u8> = b"new_slug".to_vec();
-
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(None, Some(b"blog2_slug".to_vec()), None)); // BlogId 2
     assert_ok!(_create_default_post()); // PostId 1
   
     // Try to catch an error updating a post with different account
     assert_noop!(_update_post(Some(Origin::signed(ACCOUNT2)), None,
       Some(
         self::post_update(
-          None, 
-          Some(slug),
+          Some(2), 
           None
         )
       )
     ), MSG_ONLY_POST_OWNER_CAN_UPDATE_POST);
-  });
-}
-
-#[test]
-fn update_post_should_fail_not_unique_slug() {
-  let slug : Vec<u8> = b"unique_slug".to_vec();
-
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-    
-    assert_ok!(_create_post(
-      None,
-      None,
-      Some(slug.clone()),
-      None
-    )); // PostId 2 with custom slug
-  
-    // Try to catch an error updating a post on ID 1 with a slug of post on ID 2
-    assert_noop!(_update_post(None, Some(1),
-      Some(
-        self::post_update(
-          None, 
-          Some(slug),
-          None
-        )
-      )
-    ), MSG_POST_SLUG_IS_NOT_UNIQUE);
   });
 }
 
@@ -704,7 +669,6 @@ fn update_post_should_fail_invalid_ipfs_hash() {
     assert_noop!(_update_post(None, None,
       Some(
         self::post_update(
-          None, 
           None,
           Some(ipfs_hash)
         )
@@ -1380,86 +1344,7 @@ fn change_comment_score_should_fail_comment_not_found() {
   });
 }
 
-// Shares tests
-
-#[test]
-fn share_post_should_work() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-
-    assert_ok!(Blogs::share_post(Origin::signed(ACCOUNT1), 1));
-
-    assert_eq!(Blogs::post_shared_by_account((ACCOUNT1, 1)), true);
-    assert_eq!(Blogs::accounts_that_shared_post(1), vec![ACCOUNT1]);
-  });
-}
-
-#[test]
-fn share_post_should_fail_post_already_shared() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-
-    assert_ok!(Blogs::share_post(Origin::signed(ACCOUNT1), 1));
-    assert_noop!(Blogs::share_post(Origin::signed(ACCOUNT1), 1),
-      MSG_ACCOUNT_ALREADY_SHARED_POST
-    );
-  });
-}
-
-#[test]
-fn share_post_should_fail_post_not_found() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-
-    assert_noop!(Blogs::share_post(Origin::signed(ACCOUNT1), 2),
-      MSG_POST_NOT_FOUND
-    );
-  });
-}
-
-#[test]
-fn share_comment_should_work() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-    assert_ok!(_create_default_comment()); // CommentId 1
-
-    assert_ok!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1));
-
-    assert_eq!(Blogs::comment_shared_by_account((ACCOUNT1, 1)), true);
-    assert_eq!(Blogs::accounts_that_shared_comment(1), vec![ACCOUNT1]);
-  });
-}
-
-#[test]
-fn share_comment_should_fail_comment_already_shared() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-    assert_ok!(_create_default_comment()); // CommentId 1
-
-    assert_ok!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1));
-    assert_noop!(Blogs::share_comment(Origin::signed(ACCOUNT1), 1),
-      MSG_ACCOUNT_ALREADY_SHARED_COMMENT
-    );
-  });
-}
-
-#[test]
-fn share_comment_should_fail_comment_not_found() {
-  with_externalities(&mut build_ext(), || {
-    assert_ok!(_create_default_blog()); // BlogId 1
-    assert_ok!(_create_default_post()); // PostId 1
-    assert_ok!(_create_default_comment()); // CommentId 1
-
-    assert_noop!(Blogs::share_comment(Origin::signed(ACCOUNT1), 2),
-      MSG_COMMENT_NOT_FOUND
-    );
-  });
-}
+// TODO Shares tests
 
 // Profiles tests
 
