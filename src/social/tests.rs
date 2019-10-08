@@ -99,11 +99,11 @@ fn scoring_action_follow_account() -> ScoringAction {
 fn extension_regular_post() -> PostExtension<Test> {
   PostExtension::RegularPost
 }
-fn extension_shared_post() -> PostExtension<Test> {
-  PostExtension::SharedPost(1)
+fn extension_shared_post(post_id: PostId) -> PostExtension<Test> {
+  PostExtension::SharedPost(post_id)
 }
-fn extension_shared_comment() -> PostExtension<Test> {
-  PostExtension::SharedComment(1)
+fn extension_shared_comment(comment_id: CommentId) -> PostExtension<Test> {
+  PostExtension::SharedComment(comment_id)
 }
 
 fn _create_default_blog() -> dispatch::Result {
@@ -453,47 +453,45 @@ fn update_blog_should_fail_not_an_owner() {
   });
 }
 
-// TODO uncomment when slug validation implemented:
-// #[test]
-// fn update_blog_should_fail_short_slug() {
-//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
+#[test]
+fn update_blog_should_fail_short_slug() {
+  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MIN_LEN - 1) as usize];
 
-//   with_externalities(&mut build_ext(), || {
-//     assert_ok!(_create_default_blog()); // BlogId 1
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
   
-//     // Try to catch an error updating a blog with too short slug
-//     assert_noop!(_update_blog(None, None,
-//       Some(
-//         self::blog_update(
-//           None, 
-//           Some(slug),
-//           None
-//         )
-//       )
-//     ), MSG_BLOG_SLUG_IS_TOO_SHORT);
-//   });
-// }
+    // Try to catch an error updating a blog with too short slug
+    assert_noop!(_update_blog(None, None,
+      Some(
+        self::blog_update(
+          None, 
+          Some(slug),
+          None
+        )
+      )
+    ), MSG_BLOG_SLUG_IS_TOO_SHORT);
+  });
+}
 
-// TODO uncomment when slug validation implemented:
-// #[test]
-// fn update_blog_should_fail_long_slug() {
-//   let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
+#[test]
+fn update_blog_should_fail_long_slug() {
+  let slug : Vec<u8> = vec![97; (DEFAULT_SLUG_MAX_LEN + 1) as usize];
 
-//   with_externalities(&mut build_ext(), || {
-//     assert_ok!(_create_default_blog()); // BlogId 1
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
   
-//     // Try to catch an error updating a blog with too long slug
-//     assert_noop!(_update_blog(None, None,
-//       Some(
-//         self::blog_update(
-//           None, 
-//           Some(slug),
-//           None
-//         )
-//       )
-//     ), MSG_BLOG_SLUG_IS_TOO_LONG);
-//   });
-// }
+    // Try to catch an error updating a blog with too long slug
+    assert_noop!(_update_blog(None, None,
+      Some(
+        self::blog_update(
+          None, 
+          Some(slug),
+          None
+        )
+      )
+    ), MSG_BLOG_SLUG_IS_TOO_LONG);
+  });
+}
 
 #[test]
 fn update_blog_should_fail_not_unique_slug() {
@@ -562,7 +560,15 @@ fn create_post_should_work() {
     assert_eq!(post.upvotes_count, 0);
     assert_eq!(post.downvotes_count, 0);
     assert_eq!(post.shares_count, 0);
+    assert_eq!(post.extension, self::extension_regular_post());
     assert!(post.edit_history.is_empty());
+  });
+}
+
+#[test]
+fn create_post_should_fail_blog_not_found() {
+  with_externalities(&mut build_ext(), || {
+    assert_noop!(_create_default_post(), MSG_BLOG_NOT_FOUND);
   });
 }
 
@@ -573,7 +579,7 @@ fn create_post_should_fail_invalid_ipfs_hash() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
 
-    // Try to catch an error creating a post with invalid ipfs_hash
+    // Try to catch an error creating a regular post with invalid ipfs_hash
     assert_noop!(_create_post(None, None, Some(ipfs_hash), None), MSG_IPFS_IS_INCORRECT);
   });
 }
@@ -1344,7 +1350,146 @@ fn change_comment_score_should_fail_comment_not_found() {
   });
 }
 
-// TODO Shares tests
+// Shares tests
+
+#[test]
+fn share_post_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_post(1))
+    )); // Share PostId 1 on BlogId 2 by ACCOUNT2
+
+    // Check storages
+    assert_eq!(Blogs::post_ids_by_blog_id(1), vec![1]);
+    assert_eq!(Blogs::post_ids_by_blog_id(2), vec![2]);
+    assert_eq!(Blogs::next_post_id(), 3);
+
+    assert_eq!(Blogs::post_shares_by_account((ACCOUNT2, 1)), 1);
+    assert_eq!(Blogs::shared_post_ids_by_original_post_id(1), vec![2]);
+
+    // Check whether data stored correctly
+    assert_eq!(Blogs::post_by_id(1).unwrap().shares_count, 1);
+
+    let shared_post = Blogs::post_by_id(2).unwrap();
+
+    assert_eq!(shared_post.blog_id, 2);
+    assert_eq!(shared_post.created.account, ACCOUNT2);
+    assert!(shared_post.ipfs_hash.is_empty());
+    assert_eq!(shared_post.extension, self::extension_shared_post(1));
+  });
+}
+
+#[test]
+fn share_post_should_change_score() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_post(1))
+    )); // Share PostId 1 on BlogId 2 by ACCOUNT2
+
+    assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_SHARE_POST_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1 + DEFAULT_SHARE_POST_ACTION_WEIGHT as u32);
+    assert_eq!(Blogs::post_score_by_account((ACCOUNT2, 1, self::scoring_action_share_post())), Some(DEFAULT_SHARE_POST_ACTION_WEIGHT));
+  });
+}
+
+#[test]
+fn share_post_should_fail_original_post_not_found() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    // Skipped creating PostId 1
+    assert_noop!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_post(1))),
+      
+    MSG_ORIGINAL_POST_NOT_FOUND);
+  });
+}
+
+#[test]
+fn share_comment_should_work() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_comment(1))
+    )); // Share CommentId 1 on BlogId 2 by ACCOUNT2
+
+    // Check storages
+    assert_eq!(Blogs::post_ids_by_blog_id(1), vec![1]);
+    assert_eq!(Blogs::post_ids_by_blog_id(2), vec![2]);
+    assert_eq!(Blogs::next_post_id(), 3);
+
+    assert_eq!(Blogs::comment_shares_by_account((ACCOUNT2, 1)), 1);
+    assert_eq!(Blogs::shared_post_ids_by_original_comment_id(1), vec![2]);
+
+    // Check whether data stored correctly
+    assert_eq!(Blogs::comment_by_id(1).unwrap().shares_count, 1);
+
+    let shared_post = Blogs::post_by_id(2).unwrap();
+
+    assert_eq!(shared_post.blog_id, 2);
+    assert_eq!(shared_post.created.account, ACCOUNT2);
+    assert!(shared_post.ipfs_hash.is_empty());
+    assert_eq!(shared_post.extension, self::extension_shared_comment(1));
+  });
+}
+
+#[test]
+fn share_comment_should_change_score() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_default_comment()); // CommentId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_comment(1))
+    )); // Share CommentId 1 on BlogId 2 by ACCOUNT2
+
+    assert_eq!(Blogs::comment_by_id(1).unwrap().score, DEFAULT_SHARE_COMMENT_ACTION_WEIGHT as i32);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1 + DEFAULT_SHARE_COMMENT_ACTION_WEIGHT as u32);
+    assert_eq!(Blogs::comment_score_by_account((ACCOUNT2, 1, self::scoring_action_share_comment())), Some(DEFAULT_SHARE_COMMENT_ACTION_WEIGHT));
+  });
+}
+
+#[test]
+fn share_comment_should_fail_original_comment_not_found() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post()); // PostId 1
+    // Skipped creating CommentId 1
+    assert_noop!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_comment(1))),
+      
+    MSG_ORIGINAL_COMMENT_NOT_FOUND);
+  });
+}
 
 // Profiles tests
 
