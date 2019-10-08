@@ -1421,6 +1421,30 @@ fn share_post_should_fail_original_post_not_found() {
 }
 
 #[test]
+fn share_post_should_fail_share_shared_post() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_blog(Some(Origin::signed(ACCOUNT2)), Some(b"blog2_slug".to_vec()), None)); // BlogId 2 by ACCOUNT2
+    assert_ok!(_create_default_post());
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT2)),
+      Some(2),
+      Some(vec![]),
+      Some(self::extension_shared_post(1)))
+    );
+
+    // Try to share post with extension SharedPost
+    assert_noop!(_create_post(
+      Some(Origin::signed(ACCOUNT1)),
+      Some(1),
+      Some(vec![]),
+      Some(self::extension_shared_post(2))),
+      
+    MSG_CANNOT_SHARE_SHARED_POST);
+  });
+}
+
+#[test]
 fn share_comment_should_work() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1

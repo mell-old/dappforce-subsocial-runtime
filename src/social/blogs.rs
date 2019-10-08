@@ -91,6 +91,7 @@ pub const MSG_REPUTATION_DIFF_NOT_FOUND: &str = "Scored account reputation diffe
 pub const MSG_ORIGINAL_POST_NOT_FOUND: &str = "Original post not found when sharing";
 pub const MSG_OVERFLOW_TOTAL_SHARES_SHARING_POST: &str = "Overflow total shares counter when sharing post";
 pub const MSG_OVERFLOW_POST_SHARES_BY_ACCOUNT: &str = "Overflow shares by account counter when sharing post";
+pub const MSG_CANNOT_SHARE_SHARED_POST: &str = "Cannot share post that is not regular post";
 pub const MSG_ORIGINAL_COMMENT_NOT_FOUND: &str = "Original comment not found when sharing";
 pub const MSG_OVERFLOW_TOTAL_SHARES_SHARING_COMMENT: &str = "Overflow total shares counter when sharing comment";
 pub const MSG_OVERFLOW_COMMENT_SHARES_BY_ACCOUNT: &str = "Overflow shares by account counter when sharing comment";
@@ -598,6 +599,8 @@ decl_module! {
           Self::is_ipfs_hash_valid(ipfs_hash.clone())?;
         },
         PostExtension::SharedPost(post_id) => {
+          let post = Self::post_by_id(post_id).ok_or(MSG_ORIGINAL_POST_NOT_FOUND)?;
+          ensure!(post.extension == PostExtension::RegularPost, MSG_CANNOT_SHARE_SHARED_POST);
           Self::share_post(owner.clone(), post_id, new_post_id)?;
         },
         PostExtension::SharedComment(comment_id) => {
