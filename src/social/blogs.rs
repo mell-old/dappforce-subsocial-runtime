@@ -1336,6 +1336,7 @@ impl<T: Trait> Module<T> {
       Self::change_post_score(account.clone(), original_post, ScoringAction::SharePost)?;
     }
 
+    <PostById<T>>::insert(original_post_id, original_post);
     <PostSharesByAccount<T>>::insert((account.clone(), original_post_id), shares_by_account); // TODO Maybe use mutate instead?
     <SharedPostIdsByOriginalPostId<T>>::mutate(original_post_id, |ids| ids.push(shared_post_id));
 

@@ -1386,6 +1386,36 @@ fn share_post_should_work() {
 }
 
 #[test]
+fn share_post_should_work_share_own_post() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT1)),
+      Some(1),
+      Some(vec![]),
+      Some(self::extension_shared_post(1))
+    )); // Share PostId 1
+
+    // Check storages
+    assert_eq!(Blogs::post_ids_by_blog_id(1), vec![1, 2]);
+    assert_eq!(Blogs::next_post_id(), 3);
+
+    assert_eq!(Blogs::post_shares_by_account((ACCOUNT1, 1)), 1);
+    assert_eq!(Blogs::shared_post_ids_by_original_post_id(1), vec![2]);
+
+    // Check whether data stored correctly
+    assert_eq!(Blogs::post_by_id(1).unwrap().shares_count, 1);
+
+    let shared_post = Blogs::post_by_id(2).unwrap();
+    assert_eq!(shared_post.blog_id, 1);
+    assert_eq!(shared_post.created.account, ACCOUNT1);
+    assert!(shared_post.ipfs_hash.is_empty());
+    assert_eq!(shared_post.extension, self::extension_shared_post(1));
+  });
+}
+
+#[test]
 fn share_post_should_change_score() {
   with_externalities(&mut build_ext(), || {
     assert_ok!(_create_default_blog()); // BlogId 1
@@ -1401,6 +1431,24 @@ fn share_post_should_change_score() {
     assert_eq!(Blogs::post_by_id(1).unwrap().score, DEFAULT_SHARE_POST_ACTION_WEIGHT as i32);
     assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1 + DEFAULT_SHARE_POST_ACTION_WEIGHT as u32);
     assert_eq!(Blogs::post_score_by_account((ACCOUNT2, 1, self::scoring_action_share_post())), Some(DEFAULT_SHARE_POST_ACTION_WEIGHT));
+  });
+}
+
+#[test]
+fn share_post_should_not_change_score() {
+  with_externalities(&mut build_ext(), || {
+    assert_ok!(_create_default_blog()); // BlogId 1
+    assert_ok!(_create_default_post()); // PostId 1
+    assert_ok!(_create_post(
+      Some(Origin::signed(ACCOUNT1)),
+      Some(1),
+      Some(vec![]),
+      Some(self::extension_shared_post(1))
+    )); // Share PostId
+
+    assert_eq!(Blogs::post_by_id(1).unwrap().score, 0);
+    assert_eq!(Blogs::social_account_by_id(ACCOUNT1).unwrap().reputation, 1);
+    assert_eq!(Blogs::post_score_by_account((ACCOUNT1, 1, self::scoring_action_share_post())), None);
   });
 }
 
