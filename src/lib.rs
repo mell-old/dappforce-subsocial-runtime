@@ -16,8 +16,10 @@ extern crate parity_codec_derive;
 
 pub mod currency;
 pub mod social;
+pub mod multisig;
 mod migration;
 use social::blogs;
+use multisig::wallet;
 use client::{
     block_builder::api::{self as block_builder_api, CheckInherentsResult, InherentData},
     impl_runtime_apis, runtime_api as client_api,
@@ -236,6 +238,12 @@ impl blogs::Trait for Runtime {
     type ReactionId = u64;
 }
 
+impl wallet::Trait for Runtime {
+	type Event = Event;
+	type Currency = balances::Module<Self>;
+	type TransactionId = u64;
+}
+
 impl migration::Trait for Runtime {
     type Event = Event;
 }
@@ -268,6 +276,7 @@ construct_runtime!(
         FinalityTracker: finality_tracker::{Module, Call, Inherent},
 		Grandpa: grandpa::{Module, Call, Storage, Config<T>, Log(), Event<T>},
         Blogs: blogs::{Module, Call, Storage, Event<T>},
+        MultisigWalletModule: wallet::{Module, Call, Storage, Event<T>},
 		Migration: migration::{Module, Call, Storage, Event<T>},
 	}
 );
